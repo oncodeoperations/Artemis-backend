@@ -23,7 +23,7 @@ app.use(limiter);
 app.use(cors({
   origin: process.env.NODE_ENV === 'production' 
     ? ['https://your-frontend-domain.com'] 
-    : ['http://localhost:3000', 'http://127.0.0.1:3000']
+    : ['http://localhost:8080', 'http://172.20.10.2:8080']
 }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
