@@ -177,14 +177,14 @@ Returns API service information.
 
 ### cURL
 ```bash
-curl -X POST http://localhost:5000/api/evaluate \
+curl -X POST https://artemis-backend-mx4u.onrender.com/api/evaluate \
   -H "Content-Type: application/json" \
   -d '{"githubUrl": "https://github.com/octocat"}'
 ```
 
 ### JavaScript (Fetch)
 ```javascript
-const response = await fetch('http://localhost:5000/api/evaluate', {
+const response = await fetch('https://artemis-backend-mx4u.onrender.com/api/evaluate', {
   method: 'POST',
   headers: {
     'Content-Type': 'application/json',
@@ -203,7 +203,7 @@ console.log(result);
 import requests
 
 response = requests.post(
-    'http://localhost:5000/api/evaluate',
+    'https://artemis-backend-mx4u.onrender.com/api/evaluate',
     json={'githubUrl': 'https://github.com/octocat'}
 )
 

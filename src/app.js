@@ -22,8 +22,8 @@ const limiter = rateLimit({
 app.use(limiter);
 app.use(cors({
   origin: process.env.NODE_ENV === 'production' 
-    ? ['https://your-frontend-domain.com'] 
-    : ['http://localhost:8080', 'http://172.20.10.2:8080']
+    ? ['https://artemisfe.vercel.app'] 
+    : ['http://localhost:8080', 'http://172.20.10.2:8080', 'https://artemisfe.vercel.app']
 }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
