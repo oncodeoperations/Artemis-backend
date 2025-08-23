@@ -281,7 +281,3 @@ MIT License - see LICENSE file for details.
 3. Commit changes
 4. Push to branch
 5. Create Pull Request
-
----
-
-Built with ❤️ for developer evaluation and portfolio analysis.
