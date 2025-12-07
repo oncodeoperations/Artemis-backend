@@ -48,6 +48,23 @@ class GitHubController {
         const cached = this.cache.get(cacheKey);
         if (Date.now() - cached.timestamp < this.cacheExpiry) {
           console.log(`✅ Returning cached result for ${username} (${Date.now() - startTime}ms)`);
+          
+          // Even with cached results, handle leaderboard submission if requested
+          if (req.body.submitToLeaderboard === true && !cached.data.leaderboard_submitted) {
+            try {
+              const leaderboardService = require('../services/leaderboardService');
+              await leaderboardService.submitEntry(cached.data, username);
+              console.log(`✅ User ${username} submitted to leaderboard (from cache)`);
+              cached.data.leaderboard_submitted = true;
+              // Update cache with new leaderboard status
+              this.cache.set(cacheKey, cached);
+            } catch (leaderboardError) {
+              console.error('Failed to submit to leaderboard:', leaderboardError.message);
+              cached.data.leaderboard_submitted = false;
+              cached.data.leaderboard_error = leaderboardError.message;
+            }
+          }
+          
           return res.json(cached.data);
         } else {
           this.cache.delete(cacheKey);
@@ -283,6 +300,23 @@ class GitHubController {
       // Add performance warning if too slow
       if (duration > 5000) {
         console.warn(`⚠️ Response time exceeded 5 seconds: ${duration}ms`);
+      }
+
+      // Check if user wants to submit to leaderboard (opt-in)
+      if (req.body.submitToLeaderboard === true) {
+        try {
+          const leaderboardService = require('../services/leaderboardService');
+          await leaderboardService.submitEntry(response, username);
+          console.log(`✅ User ${username} submitted to leaderboard`);
+          response.leaderboard_submitted = true;
+        } catch (leaderboardError) {
+          console.error('Failed to submit to leaderboard:', leaderboardError.message);
+          // Don't fail the whole request if leaderboard submission fails
+          response.leaderboard_submitted = false;
+          response.leaderboard_error = leaderboardError.message;
+        }
+      } else {
+        response.leaderboard_submitted = false;
       }
       
       res.json(response);
