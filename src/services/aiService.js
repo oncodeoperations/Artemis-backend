@@ -86,6 +86,102 @@ class AIService {
   }
 
   /**
+   * Generate recruiter-focused and engineer-focused insights
+   * @param {string} prompt - Analysis prompt
+   * @param {Object} scores - Calculated scores
+   * @returns {Object} Complete insights with recruiter_summary and engineer_breakdown
+   */
+  async generateInsights(prompt, scores) {
+    try {
+      console.log('🤖 Generating comprehensive insights...');
+      
+      const response = await this.openai.chat.completions.create({
+        model: this.model,
+        messages: [
+          {
+            role: 'system',
+            content: this.getEnhancedSystemPrompt()
+          },
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        max_tokens: this.maxTokens,
+        temperature: 0.3,
+        response_format: { type: "json_object" }
+      });
+
+      const content = response.choices[0]?.message?.content;
+      if (!content) {
+        throw new Error('No response content from OpenAI');
+      }
+
+      let result = JSON.parse(content);
+      return this.validateAndEnhanceResponse(result, scores);
+
+    } catch (error) {
+      console.error('❌ OpenAI API error:', error);
+      throw new Error(`OpenAI API error: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get enhanced system prompt for comprehensive analysis
+   * @returns {string} System prompt
+   */
+  getEnhancedSystemPrompt() {
+    return `You are an expert senior software engineer and technical recruiter with 15+ years of experience.
+
+Your task is to analyze GitHub developers and provide TWO types of insights:
+1. RECRUITER SUMMARY - Non-technical, hiring-focused insights
+2. ENGINEER BREAKDOWN - Deep technical analysis
+
+RESPONSE FORMAT (JSON only, no additional text):
+{
+  "recruiter_summary": {
+    "top_strengths": ["3-5 non-technical strengths for hiring"],
+    "risks_or_weaknesses": ["2-4 hiring concerns or red flags"],
+    "recommended_role_level": "e.g., Senior Full-Stack Engineer, Mid-Level Backend Developer",
+    "activity_flag": "Active | Semi-active | Inactive",
+    "tech_stack_summary": ["key technologies, frameworks"],
+    "work_history_signals": ["observable patterns about work style"]
+  },
+  "engineer_breakdown": {
+    "code_patterns": ["specific coding patterns observed"],
+    "architecture_analysis": ["architecture insights"],
+    "testing_analysis": {
+      "test_presence": true|false,
+      "test_libraries_seen": ["Jest", "Pytest", etc],
+      "testing_patterns": ["unit tests", "integration tests", etc]
+    },
+    "complexity_insights": ["observations about code complexity"],
+    "commit_message_quality": "Good - follows conventions | Fair | Needs improvement",
+    "language_breakdown_insights": ["proficiency observations for each language"],
+    "design_patterns_used": ["Factory", "Singleton", "MVC", etc],
+    "code_smells": ["any anti-patterns or issues"],
+    "best_practices": ["good practices observed"],
+    "improvement_areas": ["specific actionable improvements"]
+  }
+}
+
+RECRUITER SUMMARY GUIDELINES:
+- Use non-technical language
+- Focus on hiring signals (reliability, consistency, growth)
+- Highlight red flags honestly but constructively
+- Recommend appropriate role level based on evidence
+
+ENGINEER BREAKDOWN GUIDELINES:
+- Be technically specific
+- Reference actual code patterns, not generic statements
+- Identify design patterns by name
+- Provide actionable technical feedback
+- Note testing maturity and practices
+
+Be honest, constructive, and specific. Base all observations on provided code examples.`;
+  }
+
+  /**
    * Get the system prompt for the AI
    * @returns {string} System prompt
    */
@@ -121,6 +217,54 @@ You must respond with valid JSON only, no additional text:
 }
 
 Be honest but constructive. Focus on specific technical observations from the code provided.`;
+  }
+
+  /**
+   * Validate and enhance AI response with scores
+   * @param {Object} response - Raw AI response
+   * @param {Object} scores - Calculated scores
+   * @returns {Object} Enhanced response
+   */
+  validateAndEnhanceResponse(response, scores) {
+    // Ensure recruiter_summary exists
+    if (!response.recruiter_summary) {
+      response.recruiter_summary = {
+        top_strengths: response.strengths || ["Shows technical capability"],
+        risks_or_weaknesses: response.weaknesses || ["Could benefit from more experience"],
+        recommended_role_level: `${scores.overall_level} Developer`,
+        activity_flag: "Semi-active",
+        tech_stack_summary: [],
+        work_history_signals: []
+      };
+    }
+
+    // Ensure engineer_breakdown exists
+    if (!response.engineer_breakdown) {
+      response.engineer_breakdown = {
+        code_patterns: response.strengths || [],
+        architecture_analysis: [],
+        testing_analysis: {
+          test_presence: false,
+          test_libraries_seen: [],
+          testing_patterns: []
+        },
+        complexity_insights: [],
+        commit_message_quality: "Fair",
+        language_breakdown_insights: [],
+        design_patterns_used: [],
+        code_smells: response.weaknesses || [],
+        best_practices: [],
+        improvement_areas: response.suggestions || []
+      };
+    }
+
+    // Clean and validate arrays
+    response.recruiter_summary.top_strengths = this.cleanArray(response.recruiter_summary.top_strengths, "Technical capability");
+    response.recruiter_summary.risks_or_weaknesses = this.cleanArray(response.recruiter_summary.risks_or_weaknesses, "Limited experience");
+    response.engineer_breakdown.code_patterns = this.cleanArray(response.engineer_breakdown.code_patterns, "Basic patterns");
+    response.engineer_breakdown.architecture_analysis = this.cleanArray(response.engineer_breakdown.architecture_analysis, "Standard structure");
+
+    return response;
   }
 
   /**

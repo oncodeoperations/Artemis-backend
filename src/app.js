@@ -18,12 +18,27 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+// CORS Configuration
+const getAllowedOrigins = () => {
+  const envOrigins = process.env.ALLOWED_ORIGINS;
+  const defaultOrigins = process.env.NODE_ENV === 'production' 
+    ? ['https://artemisfe.vercel.app'] 
+    : ['http://localhost:8080', 'http://localhost:5173', 'http://172.20.10.2:8080'];
+  
+  if (envOrigins) {
+    return envOrigins.split(',').map(origin => origin.trim());
+  }
+  
+  return defaultOrigins;
+};
+
 // Middleware
 app.use(limiter);
 app.use(cors({
-  origin: process.env.NODE_ENV === 'production' 
-    ? ['https://artemisfe.vercel.app'] 
-    : ['http://localhost:8080', 'http://172.20.10.2:8080', 'https://artemisfe.vercel.app']
+  origin: getAllowedOrigins(),
+  credentials: true,
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));

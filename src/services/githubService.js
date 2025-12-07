@@ -21,22 +21,41 @@ class GitHubService {
   }
 
   /**
-   * Get user's public repositories
+   * Get user's public repositories with pagination
    * @param {string} username - GitHub username
    * @returns {Array} Array of repository objects
    */
   async getUserRepos(username) {
     try {
-      const response = await this.client.get(`/users/${username}/repos`, {
-        params: {
-          type: 'public',
-          sort: 'updated',
-          direction: 'desc',
-          per_page: 10 // Limit to 10 most recent repos
-        }
-      });
+      let allRepos = [];
+      let page = 1;
+      const perPage = 100;
+      let hasMore = true;
 
-      return response.data.map(repo => ({
+      // Fetch all repos with pagination (max 300 repos to avoid excessive API calls)
+      while (hasMore && page <= 3) {
+        const response = await this.client.get(`/users/${username}/repos`, {
+          params: {
+            type: 'public',
+            sort: 'updated',
+            direction: 'desc',
+            per_page: perPage,
+            page: page
+          }
+        });
+
+        if (response.data.length === 0) {
+          hasMore = false;
+        } else {
+          allRepos = allRepos.concat(response.data);
+          if (response.data.length < perPage) {
+            hasMore = false;
+          }
+          page++;
+        }
+      }
+
+      return allRepos.map(repo => ({
         name: repo.name,
         description: repo.description,
         language: repo.language,
@@ -50,7 +69,9 @@ class GitHubService {
         has_issues: repo.has_issues,
         has_wiki: repo.has_wiki,
         archived: repo.archived,
-        disabled: repo.disabled
+        disabled: repo.disabled,
+        fork: repo.fork || false,
+        open_issues_count: repo.open_issues_count || 0
       }));
     } catch (error) {
       if (error.response?.status === 404) {
@@ -250,9 +271,12 @@ class GitHubService {
     try {
       const response = await this.client.get(`/users/${username}`);
       return {
-        name: response.data.name,
-        bio: response.data.bio,
-        location: response.data.location,
+        username: response.data.login,
+        name: response.data.name || username,
+        bio: response.data.bio || '',
+        avatar: response.data.avatar_url || '',
+        location: response.data.location || '',
+        github_url: response.data.html_url,
         company: response.data.company,
         blog: response.data.blog,
         public_repos: response.data.public_repos,
@@ -262,9 +286,167 @@ class GitHubService {
         updated_at: response.data.updated_at
       };
     } catch (error) {
+      if (error.response?.status === 401) {
+        throw new Error('GitHub API authentication failed. Please check your GITHUB_TOKEN in the .env file. Generate a new token at https://github.com/settings/tokens with "public_repo" and "read:user" scopes.');
+      }
+      if (error.response?.status === 404) {
+        throw new Error(`GitHub user '${username}' not found`);
+      }
+      if (error.response?.status === 403) {
+        throw new Error('GitHub API rate limit exceeded. Please wait or use an authenticated token.');
+      }
       console.warn(`Failed to fetch user profile: ${error.message}`);
-      return null;
+      throw error;
     }
+  }
+
+  /**
+   * Get user's commit activity for activity analysis
+   * @param {string} username - GitHub username
+   * @param {Array} repos - User's repositories
+   * @returns {Object} Activity data
+   */
+  async getCommitActivity(username, repos) {
+    try {
+      const now = new Date();
+      const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+      const sixMonthsAgo = new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000);
+
+      let commitsLast30Days = 0;
+      let commitsLast90Days = 0;
+      const weeklyCommits = new Map();
+
+      // Sample up to 10 most recent repos for activity
+      const reposToCheck = repos.slice(0, 10);
+
+      for (const repo of reposToCheck) {
+        try {
+          const commits = await this.client.get(`/repos/${username}/${repo.name}/commits`, {
+            params: {
+              author: username,
+              since: sixMonthsAgo.toISOString(),
+              per_page: 100
+            }
+          });
+
+          commits.data.forEach(commit => {
+            const commitDate = new Date(commit.commit.author.date);
+            
+            if (commitDate >= thirtyDaysAgo) {
+              commitsLast30Days++;
+            }
+            if (commitDate >= ninetyDaysAgo) {
+              commitsLast90Days++;
+            }
+
+            // Track weekly commits
+            const weekKey = this.getWeekKey(commitDate);
+            weeklyCommits.set(weekKey, (weeklyCommits.get(weekKey) || 0) + 1);
+          });
+        } catch (error) {
+          console.warn(`Failed to fetch commits for ${repo.name}:`, error.message);
+        }
+      }
+
+      // Determine activity status
+      let activityStatus = 'Inactive';
+      if (commitsLast30Days > 0) {
+        activityStatus = 'Active';
+      } else if (commitsLast90Days > 0) {
+        activityStatus = 'Semi-active';
+      }
+
+      return {
+        commitsLast30Days,
+        commitsLast90Days,
+        weeksWithCommits: weeklyCommits.size,
+        activityStatus
+      };
+    } catch (error) {
+      console.warn(`Failed to fetch commit activity: ${error.message}`);
+      return {
+        commitsLast30Days: 0,
+        commitsLast90Days: 0,
+        weeksWithCommits: 0,
+        activityStatus: 'Inactive'
+      };
+    }
+  }
+
+  /**
+   * Get week key for commit grouping
+   * @param {Date} date - Commit date
+   * @returns {string} Week identifier
+   */
+  getWeekKey(date) {
+    const year = date.getFullYear();
+    const week = Math.floor((date - new Date(year, 0, 1)) / (7 * 24 * 60 * 60 * 1000));
+    return `${year}-W${week}`;
+  }
+
+  /**
+   * Filter repositories to analyze (remove forks, low-quality repos, etc.)
+   * Implements BACKEND_SPEC.md repository filtering logic
+   * @param {Array} repos - All repositories
+   * @param {string} username - GitHub username
+   * @returns {Array} Filtered repositories
+   */
+  filterRepositories(repos, username) {
+    return repos.filter(repo => this.shouldAnalyzeRepo(repo));
+  }
+
+  /**
+   * Determine if a repository should be analyzed
+   * @param {Object} repo - Repository object
+   * @returns {boolean} Whether to analyze
+   */
+  shouldAnalyzeRepo(repo) {
+    // Skip forks (CHECKLIST: filter forks ✓)
+    if (repo.fork) {
+      return false;
+    }
+
+    // Skip archived repos
+    if (repo.archived) {
+      return false;
+    }
+
+    // Skip disabled repos
+    if (repo.disabled) {
+      return false;
+    }
+
+    // Skip empty or very small repos (CHECKLIST: <5 files ~ 10KB ✓)
+    if (repo.size < 10) {  // Less than 10KB
+      return false;
+    }
+
+    // Skip repos with school assignment patterns (CHECKLIST: school assignments ✓)
+    const assignmentPatterns = /assignment|lab\d+|project\d+|homework|cs\d+|course|class\d+|school|university/i;
+    if (assignmentPatterns.test(repo.name) || assignmentPatterns.test(repo.description || '')) {
+      return false;
+    }
+
+    // Skip auto-generated repos (CHECKLIST: auto-generated ✓)
+    const autoGenPatterns = /generated by|created by github|template|boilerplate|starter/i;
+    if (repo.description && autoGenPatterns.test(repo.description.toLowerCase())) {
+      return false;
+    }
+
+    // Skip very old repos with no recent activity
+    const createdDate = new Date(repo.created_at);
+    const updatedDate = new Date(repo.updated_at);
+    const now = new Date();
+    
+    const ageYears = (now - createdDate) / (365 * 24 * 60 * 60 * 1000);
+    const daysSinceUpdate = (now - updatedDate) / (24 * 60 * 60 * 1000);
+    
+    if (ageYears > 5 && daysSinceUpdate > 730) {  // 2 years
+      return false;
+    }
+
+    return true;
   }
 }
 

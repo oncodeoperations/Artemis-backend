@@ -413,6 +413,142 @@ class CodeExtractor {
     
     return longLineRatio < 0.3 && hasConsistentIndentation;
   }
+
+  /**
+   * Perform comprehensive repository analysis for scoring
+   * @param {Array} files - Repository files
+   * @param {Object} repo - Repository metadata
+   * @returns {Object} Detailed analysis for scoring
+   */
+  analyzeRepositoryForScoring(files, repo) {
+    const analysis = {
+      name: repo.name,
+      description: repo.description,
+      // Code Quality indicators
+      hasTests: false,
+      hasGoodStructure: false,
+      meaningfulCommitsRatio: 0.5,  // Would need commit data
+      hasConsistentStyle: false,
+      hasDocumentation: false,
+      hasCodeSmells: false,
+      
+      // Architecture indicators
+      hasMVCPattern: false,
+      hasModularStructure: false,
+      hasSeparationOfConcerns: false,
+      hasReusableComponents: false,
+      hasServicesLayer: false,
+      
+      // Repository Quality indicators
+      isComplete: false,
+      hasCICD: false,
+      isWellStructured: false,
+      hasGoodREADME: false,
+      
+      // Additional data
+      frameworks: [],
+      patterns: [],
+      languages: []
+    };
+
+    // Analyze files
+    for (const file of files) {
+      const path = file.path.toLowerCase();
+      const content = file.content || '';
+
+      // Check for tests
+      if (path.includes('test') || path.includes('spec') || path.includes('__tests__')) {
+        analysis.hasTests = true;
+      }
+
+      // Check for CI/CD
+      if (path.includes('.github/workflows') || path.includes('.gitlab-ci') || 
+          path.includes('circle') || path.includes('travis') || path.includes('jenkinsfile')) {
+        analysis.hasCICD = true;
+      }
+
+      // Check for documentation
+      if (path.includes('readme') || path.includes('.md') || content.includes('/**')) {
+        analysis.hasDocumentation = true;
+      }
+
+      // Check README quality
+      if (path.includes('readme.md')) {
+        const readmeLength = content.length;
+        analysis.hasGoodREADME = readmeLength > 500;  // Substantial README
+      }
+
+      // Check for MVC pattern
+      if (path.includes('model') || path.includes('view') || path.includes('controller')) {
+        analysis.hasMVCPattern = true;
+      }
+
+      // Check for modular structure
+      if (path.includes('components') || path.includes('modules') || path.includes('packages')) {
+        analysis.hasModularStructure = true;
+      }
+
+      // Check for separation of concerns
+      if (path.includes('services') || path.includes('utils') || path.includes('helpers') ||
+          path.includes('lib') || path.includes('core')) {
+        analysis.hasSeparationOfConcerns = true;
+        analysis.hasServicesLayer = true;
+      }
+
+      // Check for reusable components
+      if (path.includes('components') || path.includes('shared') || path.includes('common')) {
+        analysis.hasReusableComponents = true;
+      }
+
+      // Detect frameworks and languages
+      const snippet = this.processFile(file);
+      if (snippet) {
+        analysis.frameworks.push(...snippet.frameworks);
+        analysis.patterns.push(...snippet.patterns);
+        if (!analysis.languages.includes(snippet.language)) {
+          analysis.languages.push(snippet.language);
+        }
+        
+        // Check code quality
+        if (snippet.codeQuality) {
+          if (snippet.codeQuality.hasComments && snippet.codeQuality.usesModernSyntax) {
+            analysis.hasConsistentStyle = true;
+          }
+        }
+      }
+    }
+
+    // Check for good structure (multiple organized folders)
+    const uniqueFolders = new Set();
+    files.forEach(file => {
+      const parts = file.path.split('/');
+      if (parts.length > 1) {
+        uniqueFolders.add(parts[0]);
+      }
+    });
+    analysis.hasGoodStructure = uniqueFolders.size >= 3;
+    analysis.isWellStructured = uniqueFolders.size >= 3;
+
+    // Check if project is complete (has main code + config files)
+    const hasMainCode = files.some(f => 
+      f.path.includes('src/') || f.path.includes('lib/') || f.path.includes('app/')
+    );
+    const hasConfig = files.some(f => 
+      f.path.includes('package.json') || f.path.includes('requirements.txt') || 
+      f.path.includes('pom.xml') || f.path.includes('build.gradle')
+    );
+    analysis.isComplete = hasMainCode && hasConfig && files.length > 5;
+
+    // Check for code smells (very large files, poor naming, etc.)
+    const largeFiles = files.filter(f => f.size > 100000);  // > 100KB
+    analysis.hasCodeSmells = largeFiles.length > (files.length * 0.3);
+
+    // Unique frameworks and patterns
+    analysis.frameworks = [...new Set(analysis.frameworks)];
+    analysis.patterns = [...new Set(analysis.patterns)];
+
+    return analysis;
+  }
 }
 
 module.exports = new CodeExtractor();

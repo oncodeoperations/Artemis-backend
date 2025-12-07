@@ -4,7 +4,7 @@ const githubController = require('../controllers/githubController');
 const router = express.Router();
 
 // POST /api/evaluate - Main endpoint to evaluate a GitHub developer
-router.post('/evaluate', githubController.evaluateDeveloper);
+router.post('/evaluate', (req, res) => githubController.evaluateDeveloper(req, res));
 
 // GET /api/status - Service status check
 router.get('/status', (req, res) => {

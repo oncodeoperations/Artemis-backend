@@ -1,283 +1,469 @@
-# Artemis Backend - Developer Evaluator
+# 🎯 Artemis Backend - Developer Evaluation API
 
-A Node.js backend service that analyzes GitHub developer profiles and provides AI-powered skill assessments.
+**AI-powered GitHub developer analysis and grading system**
 
-## 🚀 Features
+A robust Node.js/Express backend service that analyzes GitHub profiles, examines code quality, and provides comprehensive developer evaluations using OpenAI's GPT models.
 
-- **GitHub Profile Analysis**: Fetches and analyzes public repositories
-- **AI-Powered Grading**: Uses OpenAI GPT to evaluate developer skills
-- **Code Quality Assessment**: Analyzes code structure, patterns, and best practices
-- **RESTful API**: Simple JSON API for frontend integration
-- **Rate Limiting**: Built-in protection against API abuse
-- **Lightweight**: No database required - fully in-memory operation
+---
 
-## 📋 Requirements
+## 📋 Table of Contents
 
-- Node.js 16+ 
-- GitHub Personal Access Token
-- OpenAI API Key
+- [Features](#features)
+- [Architecture](#architecture)
+- [Prerequisites](#prerequisites)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Running the Server](#running-the-server)
+- [API Documentation](#api-documentation)
+- [Project Structure](#project-structure)
+- [Deployment](#deployment)
 
-## ⚡ Quick Start
+---
 
-### 1. Install Dependencies
+## ✨ Features
+
+- 🔍 **GitHub Profile Analysis** - Fetches and analyzes public repositories
+- 🤖 **AI-Powered Evaluation** - Uses OpenAI GPT-4o-mini for intelligent code assessment
+- 📊 **Comprehensive Grading** - Provides detailed grades, strengths, weaknesses, and suggestions
+- 🛡️ **Rate Limiting** - Built-in protection against API abuse (100 req/15min per IP)
+- 🌐 **CORS Support** - Configurable cross-origin resource sharing
+- ⚡ **Error Handling** - Robust error management with user-friendly messages
+- 📈 **Health Monitoring** - Health check endpoint for uptime monitoring
+
+---
+
+## 🏗️ Architecture
+
+```
+Backend (Node.js/Express)
+    ↓
+GitHub API ← Fetch repos & code
+    ↓
+Code Analysis & Extraction
+    ↓
+OpenAI API ← AI evaluation
+    ↓
+JSON Response → Frontend
+```
+
+**Tech Stack:**
+- **Runtime**: Node.js (v16+)
+- **Framework**: Express.js
+- **AI Service**: OpenAI GPT-4o-mini
+- **HTTP Client**: Axios
+- **Security**: CORS, Rate Limiting
+
+---
+
+## 📦 Prerequisites
+
+Before you begin, ensure you have:
+
+- **Node.js** v16.0.0 or higher ([Download](https://nodejs.org/))
+- **npm** v7+ (comes with Node.js)
+- **OpenAI API Key** ([Get one here](https://platform.openai.com/api-keys))
+- **GitHub Personal Access Token** ([Create one here](https://github.com/settings/tokens))
+  - Required scopes: `public_repo`, `read:user`
+
+---
+
+## 🚀 Installation
+
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/oncodeoperations/Artemis-backend.git
+cd Artemis-backend
+```
+
+### 2. Install dependencies
+
 ```bash
 npm install
 ```
 
-### 2. Environment Setup
-Copy `.env` file and add your API keys:
+### 3. Configure environment variables
+
 ```bash
-# GitHub API Configuration
-GITHUB_TOKEN=your_github_personal_access_token_here
+# Copy the example environment file
+cp .env.example .env
+```
 
-# OpenAI API Configuration  
-OPENAI_API_KEY=your_openai_api_key_here
+Edit `.env` and add your API keys (see [Configuration](#configuration) section)
 
+---
+
+## ⚙️ Configuration
+
+Create a `.env` file in the root directory with the following variables:
+
+```env
 # Server Configuration
 PORT=5000
 NODE_ENV=development
+
+# OpenAI API Key (Required)
+OPENAI_API_KEY=sk-your-openai-api-key-here
+
+# GitHub Personal Access Token (Required)
+GITHUB_TOKEN=ghp_your-github-token-here
+
+# Rate Limiting
+RATE_LIMIT_WINDOW_MS=900000        # 15 minutes
+RATE_LIMIT_MAX_REQUESTS=100        # Max requests per window
+
+# CORS (comma-separated origins)
+ALLOWED_ORIGINS=http://localhost:8080,http://localhost:5173
 ```
 
-### 3. Start Development Server
+### Environment Variables Explained:
+
+| Variable | Description | Default | Required |
+|----------|-------------|---------|----------|
+| `PORT` | Server port | 5000 | No |
+| `NODE_ENV` | Environment mode | development | No |
+| `OPENAI_API_KEY` | OpenAI API key | - | **Yes** |
+| `GITHUB_TOKEN` | GitHub access token | - | **Yes** |
+| `RATE_LIMIT_WINDOW_MS` | Rate limit time window (ms) | 900000 | No |
+| `RATE_LIMIT_MAX_REQUESTS` | Max requests per window | 100 | No |
+
+---
+
+## 🏃 Running the Server
+
+### Development Mode (with auto-restart)
+
 ```bash
 npm run dev
 ```
 
-### 4. Start Production Server
+### Production Mode
+
 ```bash
 npm start
 ```
 
-## 🔗 API Endpoints
+### Expected Output:
 
-### Health Check
 ```
-GET /health
+🚀 Artemis Backend Server running on port 5000
+📊 Health check: http://localhost:5000/health
+🔍 API endpoint: http://localhost:5000/api/evaluate
+🌍 Environment: development
 ```
-Returns server health status.
 
-### Evaluate Developer
-```
-POST /api/evaluate
-Content-Type: application/json
+---
 
+## 📡 API Documentation
+
+### Base URL
+
+- **Development**: `http://localhost:5000`
+- **Production**: `https://artemis-backend-mx4u.onrender.com`
+
+---
+
+### Endpoints
+
+#### 1. Health Check
+
+**GET** `/health`
+
+Check if the server is running.
+
+**Response:**
+```json
+{
+  "status": "OK",
+  "timestamp": "2025-12-07T10:30:00.000Z",
+  "service": "Artemis Developer Evaluator Backend"
+}
+```
+
+---
+
+#### 2. Evaluate Developer
+
+**POST** `/api/evaluate`
+
+Analyze a GitHub profile and get AI-powered evaluation.
+
+**Request Body:**
+```json
 {
   "githubUrl": "https://github.com/username"
 }
 ```
 
-**Response:**
+**Success Response (200 OK):**
 ```json
 {
-  "grade": "Intermediate",
-  "reasoning": "The developer shows strong knowledge of JS and API design but lacks advanced architecture patterns...",
-  "strengths": ["Clean function names", "Consistent commit history", "Good error handling"],
-  "weaknesses": ["Minimal test coverage", "Few advanced concepts", "Limited documentation"],
-  "suggestions": ["Add more unit tests", "Explore design patterns", "Improve code documentation"],
-  "analyzedRepos": 3,
-  "totalRepos": 8,
-  "username": "octocat",
-  "timestamp": "2025-08-14T10:30:00.000Z"
+  "grade": "Advanced",
+  "reasoning": "Demonstrates strong software engineering principles...",
+  "strengths": [
+    "Clean code architecture",
+    "Comprehensive testing",
+    "Good documentation"
+  ],
+  "weaknesses": [
+    "Limited use of design patterns",
+    "Could improve error handling"
+  ],
+  "suggestions": [
+    "Implement more unit tests",
+    "Add API documentation"
+  ],
+  "analyzedRepos": 5,
+  "totalRepos": 12,
+  "username": "username",
+  "timestamp": "2025-12-07T10:30:00.000Z"
 }
 ```
 
-### API Status
-```
-GET /api/status
-```
-Returns API service information.
+**Error Responses:**
 
-## 🏗️ Architecture
+| Status Code | Description | Example Response |
+|-------------|-------------|------------------|
+| 400 | Invalid request | `{"error": "Invalid GitHub URL"}` |
+| 404 | User not found | `{"error": "GitHub user 'username' not found"}` |
+| 422 | No analyzable code | `{"error": "No analyzable code found"}` |
+| 429 | Rate limit exceeded | `{"error": "Too many requests..."}` |
+| 500 | Server error | `{"error": "Internal server error"}` |
 
-```
-/backend
-  /src
-    /routes
-      githubRoutes.js      # API route definitions
-    /controllers  
-      githubController.js  # Request handling and coordination
-    /services
-      githubService.js     # GitHub API interactions
-      aiService.js         # OpenAI API interactions
-    /utils
-      codeExtractor.js     # Code analysis and extraction
-      promptBuilder.js     # AI prompt generation
-    app.js                 # Express app configuration
-  server.js                # Server entry point
-  .env                     # Environment variables
-  package.json
-  README.md
-```
+---
 
-## 🔍 How It Works
+### Request Examples
 
-1. **Input**: Receives GitHub profile URL
-2. **Fetch**: Retrieves user's public repositories via GitHub API
-3. **Extract**: Analyzes code files for structure, patterns, and quality
-4. **Analyze**: Sends curated code samples to OpenAI for evaluation
-5. **Grade**: Returns skill level (Beginner/Intermediate/Advanced) with detailed feedback
+#### cURL
 
-## 🛡️ Security Features
-
-- Rate limiting (100 requests per 15 minutes per IP)
-- Input validation and sanitization
-- CORS protection
-- Environment variable protection
-- Error message sanitization in production
-
-## 🎯 Grading Criteria
-
-### Beginner (0-2 years equivalent)
-- Basic syntax understanding
-- Simple scripts and functions
-- Minimal code organization
-- Few best practices
-
-### Intermediate (2-5 years equivalent)  
-- Good code structure
-- Some design patterns
-- Error handling
-- Readable, maintainable code
-- Basic testing
-
-### Advanced (5+ years equivalent)
-- Excellent architecture
-- Advanced design patterns
-- Comprehensive testing
-- Performance optimization
-- Complex problem solving
-- Documentation
-
-## 🔧 Configuration
-
-### Environment Variables
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `GITHUB_TOKEN` | GitHub Personal Access Token | Required |
-| `OPENAI_API_KEY` | OpenAI API Key | Required |
-| `PORT` | Server port | 5000 |
-| `NODE_ENV` | Environment mode | development |
-| `RATE_LIMIT_WINDOW_MS` | Rate limit window | 900000 (15 min) |
-| `RATE_LIMIT_MAX_REQUESTS` | Max requests per window | 100 |
-
-### GitHub Token Setup
-
-1. Go to GitHub Settings → Developer settings → Personal access tokens
-2. Generate new token with `public_repo` scope
-3. Add token to `.env` file
-
-### OpenAI API Key Setup
-
-1. Sign up at [OpenAI Platform](https://platform.openai.com/)
-2. Generate API key from API settings
-3. Add key to `.env` file
-
-## 📊 API Usage Examples
-
-### cURL
 ```bash
-curl -X POST https://artemis-backend-mx4u.onrender.com/api/evaluate \
+curl -X POST http://localhost:5000/api/evaluate \
   -H "Content-Type: application/json" \
   -d '{"githubUrl": "https://github.com/octocat"}'
 ```
 
-### JavaScript (Fetch)
+#### JavaScript (Fetch)
+
 ```javascript
-const response = await fetch('https://artemis-backend-mx4u.onrender.com/api/evaluate', {
+const response = await fetch('http://localhost:5000/api/evaluate', {
   method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-  },
-  body: JSON.stringify({
-    githubUrl: 'https://github.com/octocat'
-  })
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ githubUrl: 'https://github.com/octocat' })
 });
 
 const result = await response.json();
-console.log(result);
 ```
 
-### Python (Requests)
+#### Python (Requests)
+
 ```python
 import requests
 
 response = requests.post(
-    'https://artemis-backend-mx4u.onrender.com/api/evaluate',
+    'http://localhost:5000/api/evaluate',
     json={'githubUrl': 'https://github.com/octocat'}
 )
-
-result = response.json()
-print(result)
+print(response.json())
 ```
 
-## 🚀 Deployment
+---
 
-### Heroku
+## 📁 Project Structure
+
+```
+Artemis-backend/
+├── src/
+│   ├── app.js                    # Express app configuration
+│   ├── controllers/
+│   │   └── githubController.js   # Request handlers
+│   ├── routes/
+│   │   └── githubRoutes.js       # API routes
+│   ├── services/
+│   │   ├── aiService.js          # OpenAI integration
+│   │   └── githubService.js      # GitHub API client
+│   └── utils/
+│       ├── codeExtractor.js      # Code analysis logic
+│       └── promptBuilder.js      # AI prompt generation
+├── server.js                      # Entry point
+├── package.json                   # Dependencies
+├── .env                           # Environment variables (not in git)
+├── .env.example                   # Example environment file
+├── .gitignore                     # Git ignore rules
+└── README.md                      # This file
+```
+
+---
+
+## 🔍 How It Works
+
+1. **Input**: Client sends GitHub profile URL
+2. **Fetch**: Retrieves user's public repositories via GitHub API
+3. **Analyze**: Examines code files for patterns, structure, and quality
+4. **Evaluate**: Sends curated data to OpenAI for intelligent assessment
+5. **Grade**: Returns comprehensive evaluation with grade, strengths, weaknesses, and suggestions
+
+---
+
+## 🛡️ Security & Rate Limiting
+
+The API implements multiple security layers:
+
+- ✅ **Rate Limiting**: 100 requests per 15 minutes per IP
+- ✅ **CORS Protection**: Configurable allowed origins
+- ✅ **Input Validation**: Validates all user inputs
+- ✅ **Error Sanitization**: Hides sensitive info in production
+- ✅ **Environment Variables**: Secure API key management
+
+**Rate Limit Headers:**
+- `X-RateLimit-Limit`: Maximum requests allowed
+- `X-RateLimit-Remaining`: Requests remaining
+- `X-RateLimit-Reset`: Time until limit resets
+
+---
+
+## 🎯 Grading Criteria
+
+### Beginner (0-2 years experience)
+- ✅ Basic syntax understanding
+- ✅ Simple scripts and functions
+- ✅ Minimal code organization
+- ❌ Few best practices
+
+### Intermediate (2-5 years experience)  
+- ✅ Good code structure
+- ✅ Some design patterns
+- ✅ Error handling
+- ✅ Readable, maintainable code
+- ✅ Basic testing
+
+### Advanced (5+ years experience)
+- ✅ Excellent architecture
+- ✅ Advanced design patterns
+- ✅ Comprehensive testing
+- ✅ Performance optimization
+- ✅ Complex problem solving
+- ✅ Strong documentation
+
+---
+
+## 🌐 Deployment
+
+### Deploy to Render
+
+1. Create a new Web Service on [Render](https://render.com)
+2. Connect your GitHub repository
+3. Configure environment variables in Render dashboard
+4. Set build command: `npm install`
+5. Set start command: `npm start`
+
+### Deploy to Railway
+
+1. Create a new project on [Railway](https://railway.app)
+2. Connect your repository
+3. Add environment variables
+4. Deploy automatically on push
+
+### Deploy to Heroku
+
 ```bash
+heroku login
 heroku create artemis-backend
-heroku config:set GITHUB_TOKEN=your_token
 heroku config:set OPENAI_API_KEY=your_key
+heroku config:set GITHUB_TOKEN=your_token
 git push heroku main
 ```
 
-### Render
-1. Connect your GitHub repository
-2. Set environment variables in dashboard
-3. Deploy automatically
+---
 
-### Vercel
+## 🔧 Troubleshooting
+
+### Port Already in Use
+
 ```bash
-vercel --prod
+# Windows
+netstat -ano | findstr :5000
+taskkill /PID <PID> /F
+
+# Or change port
+PORT=3000 npm start
 ```
 
-## 🐛 Troubleshooting
+### GitHub API Rate Limit
 
-### Common Issues
+- Without token: 60 requests/hour
+- With token: 5000 requests/hour
+- **Solution**: Add `GITHUB_TOKEN` to `.env`
 
-**GitHub API Rate Limit**
-- Solution: Check your GitHub token has correct permissions
-- Solution: Wait for rate limit reset or use authenticated token
+### OpenAI API Errors
 
-**OpenAI API Errors**
-- Solution: Verify API key is correct and has sufficient credits
-- Solution: Check if request size is within token limits
+- Verify API key is valid
+- Check billing and usage limits
+- Ensure sufficient credits
 
-**Invalid GitHub URL**
-- Solution: Ensure URL format is `https://github.com/username`
-- Solution: Verify user has public repositories
+---
 
-## 📈 Performance Optimization
+## 🧪 Testing
 
-- Repositories limited to 5 for analysis
-- Code files limited to 150 lines each
-- File size limit: 50KB
-- Request timeout: 30 seconds
-- Concurrent file fetching with Promise.all
-
-## 🔄 Development
-
-### Scripts
 ```bash
-npm run dev     # Start with nodemon (hot reload)
-npm start       # Start production server
-npm test        # Run tests (when implemented)
+# Test health endpoint
+curl http://localhost:5000/health
+
+# Test evaluation endpoint
+curl -X POST http://localhost:5000/api/evaluate \
+  -H "Content-Type: application/json" \
+  -d '{"githubUrl": "https://github.com/octocat"}'
 ```
 
-### Code Structure
-- **Routes**: Define API endpoints
-- **Controllers**: Handle request/response logic
-- **Services**: External API interactions
-- **Utils**: Helper functions and data processing
+---
 
-## 📄 License
+## 📈 Performance & Limits
 
-MIT License - see LICENSE file for details.
+- **Repositories analyzed**: Max 5 per request
+- **Code files per repo**: Max 15 files
+- **File size limit**: 50KB per file
+- **Request timeout**: 30 seconds
+- **Concurrent processing**: Parallel file fetching with Promise.all
+
+---
 
 ## 🤝 Contributing
 
+Contributions are welcome! Please:
+
 1. Fork the repository
-2. Create feature branch
-3. Commit changes
-4. Push to branch
-5. Create Pull Request
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+---
+
+## 📄 License
+
+MIT License - see LICENSE file for details
+
+---
+
+## 🔗 Related Projects
+
+- **Frontend**: [dev-insight-lens-1](../dev-insight-lens-1) - React/Vite frontend application
+
+---
+
+## 📞 Support
+
+For issues and questions:
+- GitHub Issues: [Create an issue](https://github.com/oncodeoperations/Artemis-backend/issues)
+- Email: support@artemis.dev
+
+---
+
+## 🙏 Acknowledgments
+
+- [OpenAI](https://openai.com) for GPT API
+- [GitHub](https://github.com) for developer platform
+- [Express.js](https://expressjs.com) for web framework
+
+---
+
+**Made with ❤️ by the Artemis Team**
