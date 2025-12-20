@@ -3,6 +3,7 @@ const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const githubRoutes = require('./routes/githubRoutes');
 const leaderboardRoutes = require('./routes/leaderboardRoutes');
+const codeRoutes = require('./routes/codeRoutes');
 require('dotenv').config();
 
 const app = express();
@@ -56,6 +57,7 @@ app.get('/health', (req, res) => {
 // API routes
 app.use('/api', githubRoutes);
 app.use('/api/leaderboard', leaderboardRoutes);
+app.use('/api', codeRoutes);
 
 // 404 handler
 app.use('*', (req, res) => {
