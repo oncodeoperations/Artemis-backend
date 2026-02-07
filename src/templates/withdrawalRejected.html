@@ -1,0 +1,30 @@
+<h1>Withdrawal Rejected</h1>
+
+<p>Hi {{recipientName}}, unfortunately your withdrawal request could not be processed.</p>
+
+<table class="detail-table" cellpadding="0" cellspacing="0">
+  <tr>
+    <td style="width: 50%; border-right: none;">
+      <div class="dt-label">Amount</div>
+      <div class="dt-value">{{amount}}</div>
+    </td>
+    <td style="width: 50%; border-left: none;">
+      <div class="dt-label">Refunded to Balance</div>
+      <div class="dt-value" style="color: #16a34a; font-weight: 700;">{{amount}}</div>
+    </td>
+  </tr>
+</table>
+
+<div class="info-card" style="border-left: 4px solid #ef4444; background: #fef2f2;">
+  <span class="status-badge" style="background: #fee2e2; color: #991b1b;">Rejected</span>
+  {{#if adminNote}}
+  <p style="margin: 12px 0 0; color: #991b1b; font-size: 14px;"><strong>Reason:</strong> {{adminNote}}</p>
+  {{/if}}
+  <p style="margin: 8px 0 0; color: #7f1d1d; font-size: 14px;">
+    The full amount has been refunded to your balance. Please review your bank details and try again, or contact support if you need help.
+  </p>
+</div>
+
+<div class="cta-wrapper">
+  <a href="{{actionUrl}}" class="cta-button">{{actionText}}</a>
+</div>

@@ -1,3 +1,5 @@
+const logger = require('./logger');
+
 /**
  * Utility for extracting and processing code snippets for analysis
  */
@@ -31,7 +33,7 @@ class CodeExtractor {
           fileAnalysis.complexity += snippet.complexity;
         }
       } catch (error) {
-        console.warn(`Failed to process file ${file.path}:`, error.message);
+        logger.warn('Failed to process file from repository', { file: file.path, error: error.message });
       }
     }
 

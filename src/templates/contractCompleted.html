@@ -1,0 +1,47 @@
+<h1>Contract Completed 🏆</h1>
+
+<p>Congratulations! The contract between <span class="highlight">{{creatorName}}</span> and <span class="highlight">{{contributorName}}</span> has been marked as complete.</p>
+
+<table class="detail-table" cellpadding="0" cellspacing="0">
+  <tr>
+    <td colspan="2">
+      <div class="dt-label">Contract Name</div>
+      <div class="dt-value">{{contractName}}</div>
+    </td>
+  </tr>
+  <tr>
+    <td style="width: 50%; border-right: none;">
+      <div class="dt-label">Type</div>
+      <div class="dt-value">{{contractType}}</div>
+    </td>
+    <td style="width: 50%; border-left: none;">
+      <div class="dt-label">Total Value</div>
+      <div class="dt-value">{{amount}}</div>
+    </td>
+  </tr>
+  <tr>
+    <td style="width: 50%; border-right: none;">
+      <div class="dt-label">Milestones Completed</div>
+      <div class="dt-value">{{completedMilestones}} of {{totalMilestones}}</div>
+    </td>
+    <td style="width: 50%; border-left: none;">
+      <div class="dt-label">Completed On</div>
+      <div class="dt-value">{{completedDate}}</div>
+    </td>
+  </tr>
+</table>
+
+<div class="info-card">
+  <span class="status-badge status-active">Completed</span>
+  <p style="margin: 12px 0 0; color: #374151; font-size: 14px;">
+    All work has been delivered and accepted. You can view the full contract details and history from your dashboard.
+  </p>
+</div>
+
+<div class="cta-wrapper">
+  <a href="{{actionUrl}}" class="cta-button">{{actionText}}</a>
+</div>
+
+<p style="font-size: 13px; color: #9ca3af; text-align: center; margin-top: 24px;">
+  Thank you for using Escon. We'd love to help with your next project!
+</p>

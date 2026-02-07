@@ -1,0 +1,54 @@
+<h1>You've received a contract 📄</h1>
+
+<p><span class="highlight">{{senderName}}</span>{{#senderCompany}} from <span class="highlight">{{senderCompany}}</span>{{/senderCompany}} has sent you a contract on Escon.</p>
+
+<table class="detail-table" cellpadding="0" cellspacing="0">
+  <tr>
+    <td colspan="2">
+      <div class="dt-label">Contract Name</div>
+      <div class="dt-value">{{contractName}}</div>
+    </td>
+  </tr>
+  <tr>
+    <td style="width: 50%; border-right: none;">
+      <div class="dt-label">Type</div>
+      <div class="dt-value">{{contractType}}</div>
+    </td>
+    <td style="width: 50%; border-left: none;">
+      <div class="dt-label">Budget</div>
+      <div class="dt-value">{{amount}}</div>
+    </td>
+  </tr>
+  <tr>
+    <td style="width: 50%; border-right: none;">
+      <div class="dt-label">Category</div>
+      <div class="dt-value">{{category}}</div>
+    </td>
+    <td style="width: 50%; border-left: none;">
+      <div class="dt-label">Subcategory</div>
+      <div class="dt-value">{{subcategory}}</div>
+    </td>
+  </tr>
+</table>
+
+<div class="info-card">
+  <div class="label">Project Description</div>
+  <p style="margin: 8px 0 0; color: #374151; font-size: 14px; line-height: 1.6;">{{description}}</p>
+</div>
+
+{{#personalMessage}}
+<div class="personal-message">
+  <div class="pm-label">Message from {{senderName}}</div>
+  <div class="pm-text">"{{personalMessage}}"</div>
+</div>
+{{/personalMessage}}
+
+<div class="cta-wrapper">
+  <a href="{{actionUrl}}" class="cta-button">{{actionText}}</a>
+  <br />
+  <a href="{{actionUrl}}" class="cta-secondary">{{actionUrl}}</a>
+</div>
+
+<p style="font-size: 13px; color: #9ca3af; text-align: center; margin-top: 24px;">
+  🔒 Your details are secure. Review the contract and accept or decline at your convenience.
+</p>

@@ -1,0 +1,40 @@
+<h1>Contract Declined</h1>
+
+<p><span class="highlight">{{contributorName}}</span> has declined your contract.</p>
+
+<table class="detail-table" cellpadding="0" cellspacing="0">
+  <tr>
+    <td colspan="2">
+      <div class="dt-label">Contract Name</div>
+      <div class="dt-value">{{contractName}}</div>
+    </td>
+  </tr>
+  <tr>
+    <td style="width: 50%; border-right: none;">
+      <div class="dt-label">Type</div>
+      <div class="dt-value">{{contractType}}</div>
+    </td>
+    <td style="width: 50%; border-left: none;">
+      <div class="dt-label">Budget</div>
+      <div class="dt-value">{{amount}}</div>
+    </td>
+  </tr>
+</table>
+
+{{#reason}}
+<div class="reason-box">
+  <div class="reason-label">Reason provided</div>
+  <div class="reason-text">{{reason}}</div>
+</div>
+{{/reason}}
+
+<div class="info-card">
+  <span class="status-badge status-rejected">Declined</span>
+  <p style="margin: 12px 0 0; color: #374151; font-size: 14px;">
+    Don't worry — you can still edit and resend this contract to another contributor, or create a new one from your dashboard.
+  </p>
+</div>
+
+<div class="cta-wrapper">
+  <a href="{{actionUrl}}" class="cta-button">{{actionText}}</a>
+</div>

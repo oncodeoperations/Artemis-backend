@@ -1,13 +1,43 @@
 const express = require('express');
 const router = express.Router();
 const leaderboardService = require('../services/leaderboardService');
+const logger = require('../utils/logger');
+const { requireAuth, requireRole } = require('../middleware/auth');
+const { validate } = require('../middleware/validate');
+const { leaderboardQuery, leaderboardUsernameParam } = require('../schemas/leaderboard');
 
 /**
- * GET /api/leaderboard
- * Get top developers with optional filters
- * Query params: country, level, language, limit
+ * @swagger
+ * tags:
+ *   name: Leaderboard
+ *   description: Developer leaderboard rankings
  */
-router.get('/', async (req, res) => {
+
+/**
+ * @swagger
+ * /api/leaderboard:
+ *   get:
+ *     summary: Get top developers with optional filters
+ *     tags: [Leaderboard]
+ *     security: []
+ *     parameters:
+ *       - in: query
+ *         name: country
+ *         schema: { type: string }
+ *       - in: query
+ *         name: level
+ *         schema: { type: string }
+ *       - in: query
+ *         name: language
+ *         schema: { type: string }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, maximum: 100 }
+ *     responses:
+ *       200:
+ *         description: Leaderboard entries
+ */
+router.get('/', validate({ query: leaderboardQuery }), async (req, res) => {
   try {
     const filters = {
       country: req.query.country,
@@ -26,7 +56,7 @@ router.get('/', async (req, res) => {
     });
     
   } catch (error) {
-    console.error('Error fetching leaderboard:', error);
+    logger.error('Error fetching leaderboard', { error: error.message });
     res.status(500).json({ 
       success: false,
       error: 'Failed to fetch leaderboard', 
@@ -36,8 +66,15 @@ router.get('/', async (req, res) => {
 });
 
 /**
- * GET /api/leaderboard/stats
- * Get leaderboard statistics
+ * @swagger
+ * /api/leaderboard/stats:
+ *   get:
+ *     summary: Get leaderboard statistics
+ *     tags: [Leaderboard]
+ *     security: []
+ *     responses:
+ *       200:
+ *         description: Aggregate leaderboard stats
  */
 router.get('/stats', async (req, res) => {
   try {
@@ -49,7 +86,7 @@ router.get('/stats', async (req, res) => {
     });
     
   } catch (error) {
-    console.error('Error fetching leaderboard stats:', error);
+    logger.error('Error fetching leaderboard stats', { error: error.message });
     res.status(500).json({ 
       success: false,
       error: 'Failed to fetch stats', 
@@ -59,10 +96,24 @@ router.get('/stats', async (req, res) => {
 });
 
 /**
- * GET /api/leaderboard/:username
- * Get specific user's rank and stats
+ * @swagger
+ * /api/leaderboard/{username}:
+ *   get:
+ *     summary: Get specific user's rank and stats
+ *     tags: [Leaderboard]
+ *     security: []
+ *     parameters:
+ *       - in: path
+ *         name: username
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: User rank and stats
+ *       404:
+ *         description: User not found in leaderboard
  */
-router.get('/:username', async (req, res) => {
+router.get('/:username', validate({ params: leaderboardUsernameParam }), async (req, res) => {
   try {
     const username = req.params.username;
     const result = await leaderboardService.getUserRank(username);
@@ -81,7 +132,8 @@ router.get('/:username', async (req, res) => {
     });
     
   } catch (error) {
-    console.error(`Error fetching user rank for ${req.params.username}:`, error);
+    const username = req.params.username;
+    logger.error('Error fetching user rank', { username, error: error.message });
     res.status(500).json({ 
       success: false,
       error: 'Failed to fetch user rank', 
@@ -91,10 +143,25 @@ router.get('/:username', async (req, res) => {
 });
 
 /**
- * DELETE /api/leaderboard/:username
- * Remove user from leaderboard (GDPR compliance)
+ * @swagger
+ * /api/leaderboard/{username}:
+ *   delete:
+ *     summary: Remove user from leaderboard (admin only, GDPR)
+ *     tags: [Leaderboard]
+ *     parameters:
+ *       - in: path
+ *         name: username
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: User removed
+ *       404:
+ *         description: User not found
+ *       403:
+ *         description: Admin role required
  */
-router.delete('/:username', async (req, res) => {
+router.delete('/:username', requireAuth, requireRole('Admin'), validate({ params: leaderboardUsernameParam }), async (req, res) => {
   try {
     const username = req.params.username;
     const removed = await leaderboardService.removeEntry(username);
@@ -113,7 +180,8 @@ router.delete('/:username', async (req, res) => {
     });
     
   } catch (error) {
-    console.error(`Error removing ${req.params.username} from leaderboard:`, error);
+    const username = req.params.username;
+    logger.error('Error removing user from leaderboard', { username, error: error.message });
     res.status(500).json({ 
       success: false,
       error: 'Failed to remove entry', 

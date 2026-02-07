@@ -1,0 +1,51 @@
+<h1>Payment Receipt 🧾</h1>
+
+<p>Your payment for a milestone has been processed successfully.</p>
+
+<table class="detail-table" cellpadding="0" cellspacing="0">
+  <tr>
+    <td colspan="2">
+      <div class="dt-label">Contract</div>
+      <div class="dt-value">{{contractName}}</div>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2">
+      <div class="dt-label">Milestone</div>
+      <div class="dt-value">{{milestoneName}}</div>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2">
+      <div class="dt-label">Paid To</div>
+      <div class="dt-value">{{contributorName}}</div>
+    </td>
+  </tr>
+  <tr>
+    <td style="width: 50%; border-right: none;">
+      <div class="dt-label">Amount</div>
+      <div class="dt-value">{{amount}}</div>
+    </td>
+    <td style="width: 50%; border-left: none;">
+      <div class="dt-label">Platform Fee</div>
+      <div class="dt-value">{{fee}}</div>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2">
+      <div class="dt-label">Total Charged</div>
+      <div class="dt-value" style="font-weight: 700;">{{total}}</div>
+    </td>
+  </tr>
+</table>
+
+<div class="info-card" style="border-left: 4px solid #16a34a; background: #f0fdf4;">
+  <span class="status-badge status-active">Payment Complete</span>
+  <p style="margin: 12px 0 0; color: #166534; font-size: 14px;">
+    This payment has been processed through Stripe. You can view the full transaction details in your contract dashboard.
+  </p>
+</div>
+
+<div class="cta-wrapper">
+  <a href="{{actionUrl}}" class="cta-button">{{actionText}}</a>
+</div>

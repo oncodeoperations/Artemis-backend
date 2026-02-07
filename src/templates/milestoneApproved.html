@@ -1,0 +1,54 @@
+<h1>Milestone Approved 🎉</h1>
+
+<p>Your milestone has been approved by <span class="highlight">{{creatorName}}</span>!</p>
+
+<table class="detail-table" cellpadding="0" cellspacing="0">
+  <tr>
+    <td colspan="2">
+      <div class="dt-label">Contract</div>
+      <div class="dt-value">{{contractName}}</div>
+    </td>
+  </tr>
+  <tr>
+    <td style="width: 50%; border-right: none;">
+      <div class="dt-label">Milestone</div>
+      <div class="dt-value">{{milestoneName}}</div>
+    </td>
+    <td style="width: 50%; border-left: none;">
+      <div class="dt-label">Amount</div>
+      <div class="dt-value">{{amount}}</div>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2">
+      <div class="dt-label">Progress</div>
+      <div class="dt-value">Milestone {{milestoneIndex}} of {{totalMilestones}} complete</div>
+    </td>
+  </tr>
+</table>
+
+{{#customMessage}}
+<div class="reason-box">
+  <div class="reason-label">Message from {{creatorName}}</div>
+  <div class="reason-text">{{customMessage}}</div>
+</div>
+{{/customMessage}}
+
+{{#paymentInitiated}}
+<div class="info-card" style="border-left: 4px solid #84cc16; background: #f7fee7;">
+  <p style="margin: 0; color: #3f6212; font-size: 14px; font-weight: 600;">
+    💳 Payment is being processed — you'll receive a confirmation once it's complete.
+  </p>
+</div>
+{{/paymentInitiated}}
+
+<div class="info-card">
+  <span class="status-badge status-active">Approved</span>
+  <p style="margin: 12px 0 0; color: #374151; font-size: 14px;">
+    Great work! This milestone has been marked as approved. {{#hasNextMilestone}}You can now start working on the next milestone.{{/hasNextMilestone}}{{^hasNextMilestone}}All milestones are complete — the contract is wrapping up!{{/hasNextMilestone}}
+  </p>
+</div>
+
+<div class="cta-wrapper">
+  <a href="{{actionUrl}}" class="cta-button">{{actionText}}</a>
+</div>

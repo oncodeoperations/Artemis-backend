@@ -1,4 +1,5 @@
 const axios = require('axios');
+const logger = require('../utils/logger');
 
 /**
  * Service for interacting with GitHub API
@@ -121,7 +122,12 @@ class GitHubService {
               sha: file.sha
             };
           } catch (error) {
-            console.warn(`Failed to fetch file ${file.path}:`, error.message);
+            logger.warn('Failed to fetch file from repository', { 
+              file: file.path, 
+              username, 
+              repo: repoName, 
+              error: error.message 
+            });
             return null;
           }
         })
@@ -295,7 +301,7 @@ class GitHubService {
       if (error.response?.status === 403) {
         throw new Error('GitHub API rate limit exceeded. Please wait or use an authenticated token.');
       }
-      console.warn(`Failed to fetch user profile: ${error.message}`);
+      logger.warn('Failed to fetch user profile from GitHub', { username, error: error.message });
       throw error;
     }
   }
@@ -345,7 +351,7 @@ class GitHubService {
             weeklyCommits.set(weekKey, (weeklyCommits.get(weekKey) || 0) + 1);
           });
         } catch (error) {
-          console.warn(`Failed to fetch commits for ${repo.name}:`, error.message);
+          logger.warn(`Failed to fetch commits for ${repo.name}`, { error: error.message });
         }
       }
 
@@ -364,7 +370,7 @@ class GitHubService {
         activityStatus
       };
     } catch (error) {
-      console.warn(`Failed to fetch commit activity: ${error.message}`);
+      logger.warn('Failed to fetch commit activity', { error: error.message });
       return {
         commitsLast30Days: 0,
         commitsLast90Days: 0,

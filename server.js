@@ -1,24 +1,50 @@
 require('dotenv').config();
 
+const http = require('http');
+const mongoose = require('mongoose');
 const app = require('./src/app');
 const connectDB = require('./src/db/connection');
+const emailService = require('./src/services/emailService');
+const { initializeSocket } = require('./src/services/socketManager');
+const logger = require('./src/utils/logger');
 
 const PORT = process.env.PORT || 5000;
 
-// Graceful shutdown handling
-process.on('SIGTERM', () => {
-  console.log('SIGTERM received, shutting down gracefully');
-  process.exit(0);
-});
+let httpServer;
 
-process.on('SIGINT', () => {
-  console.log('SIGINT received, shutting down gracefully');
-  process.exit(0);
-});
+// ─── Graceful Shutdown ──────────────────────────────────────────
+function gracefulShutdown(signal) {
+  logger.info(`${signal} received — shutting down gracefully`);
+
+  if (!httpServer) {
+    process.exit(0);
+  }
+
+  // Stop accepting new connections
+  httpServer.close(async () => {
+    logger.info('HTTP server closed');
+    try {
+      await mongoose.connection.close(false);
+      logger.info('MongoDB connection closed');
+    } catch (err) {
+      logger.error('Error closing MongoDB connection', { error: err.message });
+    }
+    process.exit(0);
+  });
+
+  // Force exit after 10s if graceful close hangs
+  setTimeout(() => {
+    logger.error('Forced shutdown — graceful close timed out');
+    process.exit(1);
+  }, 10_000);
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 // Validate environment variables
-const requiredEnvVars = ['OPENAI_API_KEY', 'GITHUB_TOKEN'];
-const optionalEnvVars = ['MONGODB_URI']; // Optional for leaderboard feature
+const requiredEnvVars = ['OPENAI_API_KEY', 'GITHUB_TOKEN', 'CLERK_PUBLISHABLE_KEY', 'CLERK_SECRET_KEY'];
+const optionalEnvVars = ['MONGODB_URI', 'CLERK_WEBHOOK_SECRET']; // Optional for leaderboard feature
 const missingEnvVars = requiredEnvVars.filter(varName => !process.env[varName]);
 
 if (missingEnvVars.length > 0) {
@@ -27,10 +53,18 @@ if (missingEnvVars.length > 0) {
   process.exit(1);
 }
 
+// Check for Clerk webhook secret
+if (!process.env.CLERK_WEBHOOK_SECRET) {
+  console.warn('⚠️  WARNING: CLERK_WEBHOOK_SECRET not set. Clerk webhooks will not be verified.');
+  console.warn('   To enable secure webhooks, add CLERK_WEBHOOK_SECRET to your .env file.');
+}
+
 // Check for optional MongoDB connection
 if (!process.env.MONGODB_URI) {
-  console.warn('⚠️  WARNING: MONGODB_URI not set. Leaderboard feature will be disabled.');
-  console.warn('   To enable leaderboard, add MONGODB_URI to your .env file.');
+  console.warn('⚠️  WARNING: MONGODB_URI not set. Leaderboard and user features will be disabled.');
+  console.warn('   To enable all features, add MONGODB_URI to your .env file.');
+} else {
+  console.log('✅ MongoDB URI configured - Database features enabled');
 }
 
 // Validate GitHub token format
@@ -53,11 +87,29 @@ const startServer = async () => {
     }
   }
 
+  // Initialize email service
+  emailService.initialize();
+  if (emailService.isConfigured) {
+    await emailService.verify();
+    console.log('📧 Email service initialized');
+  } else {
+    console.warn('⚠️  Email service not configured — emails will be logged to console');
+  }
+
+  // Create HTTP server and attach Socket.io
+  httpServer = http.createServer(app);
+  initializeSocket(httpServer);
+
   // Start server
-  app.listen(PORT, () => {
-    console.log(`🚀 Artemis Backend Server running on port ${PORT}`);
+  httpServer.listen(PORT, () => {
+    console.log(`🚀 Artemis Remote Work Platform - Backend Server running on port ${PORT}`);
     console.log(`📊 Health check: http://localhost:${PORT}/health`);
-    console.log(`🔍 API endpoint: http://localhost:${PORT}/api/evaluate`);
+    console.log(`🔐 Auth API: http://localhost:${PORT}/api/auth`);
+    console.log(`👥 Users API: http://localhost:${PORT}/api/users`);
+    console.log(`📄 Contracts API: http://localhost:${PORT}/api/contracts`);
+    console.log(`🔍 Evaluation API: http://localhost:${PORT}/api/evaluate`);
+    console.log(`🔔 Notifications API: http://localhost:${PORT}/api/notifications`);
+    console.log(`⚡ Socket.io: ws://localhost:${PORT}`);
     if (process.env.MONGODB_URI) {
       console.log(`🏆 Leaderboard API: http://localhost:${PORT}/api/leaderboard`);
     }

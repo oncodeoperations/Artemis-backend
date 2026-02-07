@@ -1,4 +1,5 @@
 const LeaderboardEntry = require('../models/LeaderboardEntry');
+const logger = require('../utils/logger');
 
 /**
  * Service for managing the public developer leaderboard
@@ -49,11 +50,11 @@ class LeaderboardService {
         }
       );
       
-      console.log(`✅ Leaderboard entry saved for ${username}`);
+      logger.info('Leaderboard entry saved', { username });
       return result;
       
     } catch (error) {
-      console.error(`❌ Failed to save leaderboard entry for ${username}:`, error.message);
+      logger.error('Failed to save leaderboard entry', { username, error: error.message });
       throw new Error(`Failed to submit to leaderboard: ${error.message}`);
     }
   }
@@ -96,7 +97,7 @@ class LeaderboardService {
       }));
       
     } catch (error) {
-      console.error('❌ Failed to fetch leaderboard:', error.message);
+      logger.error('Failed to fetch leaderboard', { error: error.message });
       throw new Error(`Failed to fetch leaderboard: ${error.message}`);
     }
   }
@@ -136,7 +137,7 @@ class LeaderboardService {
       };
       
     } catch (error) {
-      console.error(`❌ Failed to fetch user rank for ${username}:`, error.message);
+      logger.error('Failed to fetch user rank', { username, error: error.message });
       throw new Error(`Failed to fetch user rank: ${error.message}`);
     }
   }
@@ -153,14 +154,14 @@ class LeaderboardService {
       });
       
       if (result) {
-        console.log(`✅ Removed ${username} from leaderboard`);
+        logger.info('Removed user from leaderboard', { username });
         return true;
       }
       
       return false;
       
     } catch (error) {
-      console.error(`❌ Failed to remove ${username} from leaderboard:`, error.message);
+      logger.error('Failed to remove from leaderboard', { username, error: error.message });
       throw new Error(`Failed to remove from leaderboard: ${error.message}`);
     }
   }
@@ -201,7 +202,7 @@ class LeaderboardService {
       };
       
     } catch (error) {
-      console.error('❌ Failed to fetch leaderboard stats:', error.message);
+      logger.error('Failed to fetch leaderboard stats', { error: error.message });
       throw new Error(`Failed to fetch stats: ${error.message}`);
     }
   }

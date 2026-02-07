@@ -3,6 +3,7 @@ const aiService = require('../services/aiService');
 const scoringService = require('../services/scoringService');
 const codeExtractor = require('../utils/codeExtractor');
 const promptBuilder = require('../utils/promptBuilder');
+const logger = require('../utils/logger');
 
 /**
  * Main controller for evaluating GitHub developers
@@ -10,9 +11,22 @@ const promptBuilder = require('../utils/promptBuilder');
  */
 class GitHubController {
   constructor() {
-    // Simple in-memory cache (CHECKLIST: Performance optimization ✓)
+    // Bounded in-memory cache (max 500 entries, LRU eviction)
     this.cache = new Map();
     this.cacheExpiry = 30 * 60 * 1000; // 30 minutes
+    this.maxCacheSize = 500;
+  }
+
+  /**
+   * Set cache entry with LRU eviction when full
+   */
+  _setCache(key, value) {
+    if (this.cache.size >= this.maxCacheSize) {
+      // Evict oldest entry (first key in Map iteration order)
+      const oldestKey = this.cache.keys().next().value;
+      this.cache.delete(oldestKey);
+    }
+    this.cache.set(key, value);
   }
   /**
    * Evaluate a developer based on their GitHub profile
@@ -47,19 +61,19 @@ class GitHubController {
       if (this.cache.has(cacheKey)) {
         const cached = this.cache.get(cacheKey);
         if (Date.now() - cached.timestamp < this.cacheExpiry) {
-          console.log(`✅ Returning cached result for ${username} (${Date.now() - startTime}ms)`);
+          logger.info(`Returning cached result for ${username} (${Date.now() - startTime}ms)`);
           
           // Even with cached results, handle leaderboard submission if requested
           if (req.body.submitToLeaderboard === true && !cached.data.leaderboard_submitted) {
             try {
               const leaderboardService = require('../services/leaderboardService');
               await leaderboardService.submitEntry(cached.data, username);
-              console.log(`✅ User ${username} submitted to leaderboard (from cache)`);
+              logger.info(`User ${username} submitted to leaderboard (from cache)`);
               cached.data.leaderboard_submitted = true;
               // Update cache with new leaderboard status
-              this.cache.set(cacheKey, cached);
+              this._setCache(cacheKey, cached);
             } catch (leaderboardError) {
-              console.error('Failed to submit to leaderboard:', leaderboardError.message);
+              logger.error('Failed to submit to leaderboard', { error: leaderboardError.message });
               cached.data.leaderboard_submitted = false;
               cached.data.leaderboard_error = leaderboardError.message;
             }
@@ -71,10 +85,10 @@ class GitHubController {
         }
       }
 
-      console.log(`🔍 Starting comprehensive evaluation for GitHub user: ${username}`);
+      logger.info('Starting comprehensive evaluation for GitHub user', { username });
 
       // Step 1: Fetch user profile
-      console.log('👤 Fetching user profile...');
+      logger.info('Fetching user profile');
       const userProfile = await githubService.getUserProfile(username);
       if (!userProfile) {
         return res.status(404).json({
@@ -84,7 +98,7 @@ class GitHubController {
       }
 
       // Step 2: Fetch user's repositories
-      console.log('📚 Fetching repositories...');
+      logger.info('Fetching repositories');
       const allRepos = await githubService.getUserRepos(username);
       
       if (!allRepos || allRepos.length === 0) {
@@ -95,7 +109,7 @@ class GitHubController {
       }
 
       // Step 3: Filter quality repositories (CHECKLIST: Edge cases - only forks, no repos ✓)
-      console.log(`🔬 Filtering repositories (found ${allRepos.length} total)...`);
+      logger.info('Filtering repositories', { totalRepos: allRepos.length });
       const qualityRepos = githubService.filterRepositories(allRepos, username);
       
       if (qualityRepos.length === 0) {
@@ -123,21 +137,21 @@ class GitHubController {
         });
       }
 
-      console.log(`✅ Analyzing ${qualityRepos.length} quality repositories`);
+      logger.info('Analyzing quality repositories', { count: qualityRepos.length });
 
       // Step 4: Get commit activity data
-      console.log('📊 Analyzing commit activity...');
+      logger.info('Analyzing commit activity');
       const activityData = await githubService.getCommitActivity(username, qualityRepos);
 
       // Step 5: Analyze repositories in detail
-      console.log('🔎 Performing deep repository analysis...');
+      logger.info('Performing deep repository analysis');
       const reposToAnalyze = qualityRepos.slice(0, 30);
       const repoDetails = [];
       const codeData = [];
 
       for (const repo of reposToAnalyze) {
         try {
-          console.log(`  Analyzing: ${repo.name}`);
+          logger.info('Analyzing repository', { repoName: repo.name });
           const repoFiles = await githubService.getRepoFiles(username, repo.name);
           
           if (repoFiles.length > 0) {
@@ -152,7 +166,7 @@ class GitHubController {
             }
           }
         } catch (error) {
-          console.warn(`  ⚠️ Failed to analyze ${repo.name}:`, error.message);
+          logger.warn('Failed to analyze repository', { repoName: repo.name, error: error.message });
         }
       }
 
@@ -164,7 +178,7 @@ class GitHubController {
       }
 
       // Step 6: Calculate scores
-      console.log('🧮 Calculating scores...');
+      logger.info('Calculating scores');
       const scores = scoringService.calculateScores(
         userProfile,
         qualityRepos,
@@ -185,11 +199,11 @@ class GitHubController {
         .map(([lang]) => lang);
 
       // Step 8: Build AI analysis prompt
-      console.log('🤖 Building AI analysis prompt...');
+      logger.info('Building AI analysis prompt');
       const prompt = promptBuilder.buildEvaluationPrompt(username, codeData, qualityRepos);
 
       // Step 9: Get AI insights
-      console.log('🧠 Generating AI insights...');
+      logger.info('Generating AI insights');
       const aiInsights = await aiService.generateInsights(prompt, scores);
 
       // Step 10: Build language breakdown for engineer view
@@ -289,17 +303,17 @@ class GitHubController {
       };
 
       // Cache the response
-      this.cache.set(cacheKey, {
+      this._setCache(cacheKey, {
         data: response,
         timestamp: Date.now()
       });
 
       const duration = Date.now() - startTime;
-      console.log(`✅ Evaluation complete for ${username}: ${scores.overall_level} (${scores.overall_score}/110) in ${duration}ms`);
+      logger.info('Evaluation complete', { username, level: scores.overall_level, score: scores.overall_score, maxScore: 110, durationMs: duration });
       
       // Add performance warning if too slow
       if (duration > 5000) {
-        console.warn(`⚠️ Response time exceeded 5 seconds: ${duration}ms`);
+        logger.warn('Response time exceeded 5 seconds', { durationMs: duration });
       }
 
       // Check if user wants to submit to leaderboard (opt-in)
@@ -307,10 +321,10 @@ class GitHubController {
         try {
           const leaderboardService = require('../services/leaderboardService');
           await leaderboardService.submitEntry(response, username);
-          console.log(`✅ User ${username} submitted to leaderboard`);
+          logger.info('User submitted to leaderboard', { username });
           response.leaderboard_submitted = true;
         } catch (leaderboardError) {
-          console.error('Failed to submit to leaderboard:', leaderboardError.message);
+          logger.error('Failed to submit to leaderboard', { error: leaderboardError.message });
           // Don't fail the whole request if leaderboard submission fails
           response.leaderboard_submitted = false;
           response.leaderboard_error = leaderboardError.message;
@@ -322,7 +336,7 @@ class GitHubController {
       res.json(response);
 
     } catch (error) {
-      console.error('❌ Error evaluating developer:', error);
+      logger.error('Error evaluating developer', { error: error.message, stack: error.stack });
       
       // Handle specific error types
       if (error.message.includes('rate limit')) {

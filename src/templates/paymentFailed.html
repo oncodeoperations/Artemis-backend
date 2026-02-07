@@ -1,0 +1,46 @@
+<h1>Payment Failed ⚠️</h1>
+
+<p>We were unable to process your payment for a milestone.</p>
+
+<table class="detail-table" cellpadding="0" cellspacing="0">
+  <tr>
+    <td colspan="2">
+      <div class="dt-label">Contract</div>
+      <div class="dt-value">{{contractName}}</div>
+    </td>
+  </tr>
+  <tr>
+    <td style="width: 50%; border-right: none;">
+      <div class="dt-label">Milestone</div>
+      <div class="dt-value">{{milestoneName}}</div>
+    </td>
+    <td style="width: 50%; border-left: none;">
+      <div class="dt-label">Amount</div>
+      <div class="dt-value">{{amount}}</div>
+    </td>
+  </tr>
+</table>
+
+<div class="reason-box" style="border-left-color: #ef4444;">
+  <div class="reason-label" style="color: #b91c1c;">Error Details</div>
+  <div class="reason-text">{{errorMessage}}</div>
+</div>
+
+{{#paymentAttempts}}
+<div class="info-card" style="border-left: 4px solid #f59e0b; background: #fffbeb;">
+  <p style="margin: 0; color: #92400e; font-size: 13px;">
+    Payment attempt #{{paymentAttempts}} — Please check your payment method and try again.
+  </p>
+</div>
+{{/paymentAttempts}}
+
+<div class="info-card" style="border-left: 4px solid #ef4444; background: #fef2f2;">
+  <span class="status-badge status-rejected">Payment Failed</span>
+  <p style="margin: 12px 0 0; color: #991b1b; font-size: 14px;">
+    The payment could not be completed. This may be due to insufficient funds, an expired card, or a bank decline. Please update your payment method and retry.
+  </p>
+</div>
+
+<div class="cta-wrapper">
+  <a href="{{actionUrl}}" class="cta-button" style="background-color: #ef4444;">{{actionText}}</a>
+</div>

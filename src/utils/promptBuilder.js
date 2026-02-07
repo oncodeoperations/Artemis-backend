@@ -1,3 +1,5 @@
+const logger = require('./logger');
+
 /**
  * Utility for building AI analysis prompts from extracted code data
  */
@@ -15,7 +17,7 @@ class PromptBuilder {
     // Estimate token count and truncate if necessary
     const estimatedTokens = this.estimateTokens(prompt);
     if (estimatedTokens > 12000) { // Leave room for response
-      console.warn(`Prompt too long (${estimatedTokens} tokens), truncating...`);
+      logger.warn('Prompt exceeds token limit, truncating', { estimatedTokens });
       return this.buildTruncatedPrompt(username, codeData, allRepos);
     }
     

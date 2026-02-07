@@ -1,4 +1,5 @@
 const OpenAI = require('openai');
+const logger = require('../utils/logger');
 
 /**
  * Service for interacting with OpenAI API
@@ -20,7 +21,7 @@ class AIService {
    */
   async gradeDeveloper(prompt) {
     try {
-      console.log('🤖 Sending request to OpenAI...');
+      logger.info('Sending request to OpenAI for developer grading');
       
       const response = await this.openai.chat.completions.create({
         model: this.model,
@@ -50,7 +51,7 @@ class AIService {
       try {
         result = JSON.parse(content);
       } catch (parseError) {
-        console.error('Failed to parse OpenAI response as JSON:', content);
+        logger.error('Failed to parse OpenAI response as JSON', { content });
         // Fallback: try to extract JSON from the response
         const jsonMatch = content.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
@@ -63,11 +64,11 @@ class AIService {
       // Validate the response structure
       const validatedResult = this.validateAndCleanResponse(result);
       
-      console.log('✅ OpenAI analysis complete');
+      logger.info('OpenAI analysis complete');
       return validatedResult;
 
     } catch (error) {
-      console.error('❌ OpenAI API error:', error);
+      logger.error('OpenAI API error in gradeDeveloper', { error: error.message });
       
       if (error.status === 429) {
         throw new Error('OpenAI API rate limit exceeded. Please try again later.');
@@ -93,7 +94,7 @@ class AIService {
    */
   async generateInsights(prompt, scores) {
     try {
-      console.log('🤖 Generating comprehensive insights...');
+      logger.info('Generating comprehensive insights from OpenAI');
       
       const response = await this.openai.chat.completions.create({
         model: this.model,
@@ -121,7 +122,7 @@ class AIService {
       return this.validateAndEnhanceResponse(result, scores);
 
     } catch (error) {
-      console.error('❌ OpenAI API error:', error);
+      logger.error('OpenAI API error in generateInsights', { error: error.message });
       throw new Error(`OpenAI API error: ${error.message}`);
     }
   }
@@ -286,7 +287,7 @@ Be honest but constructive. Focus on specific technical observations from the co
 
     // Validate grade
     if (!validGrades.includes(result.grade)) {
-      console.warn(`Invalid grade received: ${result.grade}, defaulting to Intermediate`);
+      logger.warn('Invalid grade received from OpenAI, defaulting to Intermediate', { receivedGrade: result.grade });
       result.grade = 'Intermediate';
     }
 

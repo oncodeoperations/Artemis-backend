@@ -1,0 +1,33 @@
+<h1>Withdrawal Request Received ✅</h1>
+
+<p>Hi {{recipientName}}, your withdrawal request has been submitted and is being reviewed by our team.</p>
+
+<table class="detail-table" cellpadding="0" cellspacing="0">
+  <tr>
+    <td style="width: 50%; border-right: none;">
+      <div class="dt-label">Amount</div>
+      <div class="dt-value" style="color: #16a34a; font-weight: 700;">{{amount}}</div>
+    </td>
+    <td style="width: 50%; border-left: none;">
+      <div class="dt-label">Remaining Balance</div>
+      <div class="dt-value">{{remainingBalance}}</div>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2">
+      <div class="dt-label">Bank</div>
+      <div class="dt-value">{{bankName}} — ****{{accountLast4}}</div>
+    </td>
+  </tr>
+</table>
+
+<div class="info-card" style="border-left: 4px solid #f59e0b; background: #fffbeb;">
+  <span class="status-badge" style="background: #fef3c7; color: #92400e;">Pending Review</span>
+  <p style="margin: 12px 0 0; color: #92400e; font-size: 14px;">
+    Our team will review and process your withdrawal. You'll be notified once it's been sent.
+  </p>
+</div>
+
+<div class="cta-wrapper">
+  <a href="{{actionUrl}}" class="cta-button">{{actionText}}</a>
+</div>

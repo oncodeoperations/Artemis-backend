@@ -1,0 +1,45 @@
+<h1>Payment Received 💰</h1>
+
+<p>Great news! You've been paid for your work on a milestone.</p>
+
+<table class="detail-table" cellpadding="0" cellspacing="0">
+  <tr>
+    <td colspan="2">
+      <div class="dt-label">Contract</div>
+      <div class="dt-value">{{contractName}}</div>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2">
+      <div class="dt-label">Milestone</div>
+      <div class="dt-value">{{milestoneName}}</div>
+    </td>
+  </tr>
+  <tr>
+    <td style="width: 50%; border-right: none;">
+      <div class="dt-label">Total Amount</div>
+      <div class="dt-value">{{amount}}</div>
+    </td>
+    <td style="width: 50%; border-left: none;">
+      <div class="dt-label">Credited to Balance</div>
+      <div class="dt-value" style="color: #16a34a; font-weight: 700;">{{payout}}</div>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2">
+      <div class="dt-label">Paid by</div>
+      <div class="dt-value">{{creatorName}}</div>
+    </td>
+  </tr>
+</table>
+
+<div class="info-card" style="border-left: 4px solid #16a34a; background: #f0fdf4;">
+  <span class="status-badge status-active">Payment Complete</span>
+  <p style="margin: 12px 0 0; color: #166534; font-size: 14px;">
+    The funds have been credited to your Escon balance. You can request a withdrawal from your dashboard once you've added your bank details.
+  </p>
+</div>
+
+<div class="cta-wrapper">
+  <a href="{{actionUrl}}" class="cta-button">{{actionText}}</a>
+</div>

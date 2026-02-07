@@ -1,0 +1,33 @@
+<h1>Contract Accepted ✅</h1>
+
+<p>Great news! <span class="highlight">{{contributorName}}</span> has accepted your contract.</p>
+
+<table class="detail-table" cellpadding="0" cellspacing="0">
+  <tr>
+    <td colspan="2">
+      <div class="dt-label">Contract Name</div>
+      <div class="dt-value">{{contractName}}</div>
+    </td>
+  </tr>
+  <tr>
+    <td style="width: 50%; border-right: none;">
+      <div class="dt-label">Type</div>
+      <div class="dt-value">{{contractType}}</div>
+    </td>
+    <td style="width: 50%; border-left: none;">
+      <div class="dt-label">Budget</div>
+      <div class="dt-value">{{amount}}</div>
+    </td>
+  </tr>
+</table>
+
+<div class="info-card">
+  <span class="status-badge status-active">Active</span>
+  <p style="margin: 12px 0 0; color: #374151; font-size: 14px;">
+    The contract is now <strong>active</strong>. You can begin working with {{contributorName}} and manage milestones from your dashboard.
+  </p>
+</div>
+
+<div class="cta-wrapper">
+  <a href="{{actionUrl}}" class="cta-button">{{actionText}}</a>
+</div>

@@ -1,0 +1,39 @@
+<h1>Withdrawal Sent 🎉</h1>
+
+<p>Great news, {{recipientName}}! Your withdrawal has been processed and sent to your bank account.</p>
+
+<table class="detail-table" cellpadding="0" cellspacing="0">
+  <tr>
+    <td style="width: 50%; border-right: none;">
+      <div class="dt-label">Amount</div>
+      <div class="dt-value" style="color: #16a34a; font-weight: 700;">{{amount}}</div>
+    </td>
+    <td style="width: 50%; border-left: none;">
+      <div class="dt-label">Currency</div>
+      <div class="dt-value">{{currency}}</div>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2">
+      <div class="dt-label">Bank</div>
+      <div class="dt-value">{{bankName}} — ****{{accountLast4}}</div>
+    </td>
+  </tr>
+</table>
+
+<div class="info-card" style="border-left: 4px solid #16a34a; background: #f0fdf4;">
+  <span class="status-badge status-active">Sent</span>
+  <p style="margin: 12px 0 0; color: #166534; font-size: 14px;">
+    It may take 1–3 business days for the funds to appear in your bank account depending on your bank.
+  </p>
+</div>
+
+{{#if adminNote}}
+<div class="info-card" style="border-left: 4px solid #6b7280; background: #f9fafb;">
+  <p style="margin: 0; color: #374151; font-size: 14px;"><strong>Note:</strong> {{adminNote}}</p>
+</div>
+{{/if}}
+
+<div class="cta-wrapper">
+  <a href="{{actionUrl}}" class="cta-button">{{actionText}}</a>
+</div>

@@ -1,4 +1,5 @@
 const axios = require('axios');
+const logger = require('../utils/logger');
 
 // Judge0 API Configuration
 const JUDGE0_API_URL = process.env.JUDGE0_API_URL || 'https://judge0-ce.p.rapidapi.com';
@@ -49,7 +50,7 @@ const getSubmissionResult = async (token, maxAttempts = 10) => {
 
       return response.data;
     } catch (error) {
-      console.error('Error polling submission:', error.message);
+      logger.error('Error polling submission', { error: error.message });
       throw error;
     }
   }
@@ -131,7 +132,7 @@ exports.executeCode = async (req, res) => {
         });
 
       } catch (error) {
-        console.error(`Error executing test case ${i}:`, error.message);
+        logger.error(`Error executing test case ${i}`, { error: error.message });
         
         results.push({
           testCaseIndex: i,
@@ -147,7 +148,7 @@ exports.executeCode = async (req, res) => {
     res.json(results);
 
   } catch (error) {
-    console.error('Code execution error:', error);
+    logger.error('Code execution error', { error: error.message });
     res.status(500).json({
       message: 'Failed to execute code',
       error: error.message,

@@ -1,0 +1,54 @@
+<h1>{{#isResubmission}}Milestone Resubmitted 🔄{{/isResubmission}}{{^isResubmission}}Milestone Submitted for Review 📋{{/isResubmission}}</h1>
+
+{{#isResubmission}}
+<div class="info-card" style="border-left: 4px solid #f59e0b; background: #fffbeb;">
+  <p style="margin: 0; color: #92400e; font-size: 14px; font-weight: 600;">
+    📝 This is a resubmission (revision #{{revisionCount}})
+  </p>
+</div>
+{{/isResubmission}}
+
+<p><span class="highlight">{{contributorName}}</span> has {{#isResubmission}}resubmitted{{/isResubmission}}{{^isResubmission}}submitted{{/isResubmission}} a milestone for your review.</p>
+
+<table class="detail-table" cellpadding="0" cellspacing="0">
+  <tr>
+    <td colspan="2">
+      <div class="dt-label">Contract</div>
+      <div class="dt-value">{{contractName}}</div>
+    </td>
+  </tr>
+  <tr>
+    <td style="width: 50%; border-right: none;">
+      <div class="dt-label">Milestone</div>
+      <div class="dt-value">{{milestoneName}}</div>
+    </td>
+    <td style="width: 50%; border-left: none;">
+      <div class="dt-label">Amount</div>
+      <div class="dt-value">{{milestoneAmount}}</div>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2">
+      <div class="dt-label">Progress</div>
+      <div class="dt-value">Milestone {{milestoneIndex}} of {{totalMilestones}}</div>
+    </td>
+  </tr>
+</table>
+
+{{#customMessage}}
+<div class="reason-box">
+  <div class="reason-label">Message from {{contributorName}}</div>
+  <div class="reason-text">{{customMessage}}</div>
+</div>
+{{/customMessage}}
+
+<div class="info-card">
+  <span class="status-badge status-pending">Awaiting Review</span>
+  <p style="margin: 12px 0 0; color: #374151; font-size: 14px;">
+    Please review the submitted work and approve or request revisions. Timely reviews keep the project moving.
+  </p>
+</div>
+
+<div class="cta-wrapper">
+  <a href="{{actionUrl}}" class="cta-button">{{actionText}}</a>
+</div>
