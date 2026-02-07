@@ -3,6 +3,7 @@ const Contract = require('../models/Contract');
 const Assessment = require('../models/Assessment');
 const AssessmentInvitation = require('../models/AssessmentInvitation');
 const AssessmentSession = require('../models/AssessmentSession');
+const LeaderboardEntry = require('../models/LeaderboardEntry');
 const logger = require('../utils/logger');
 
 /**
@@ -197,12 +198,124 @@ const deleteUser = async (req, res) => {
 };
 
 /**
+ * Get saved developers with hydrated profiles (Business Owners only)
+ * GET /api/users/saved-developers
+ */
+const getSavedDevelopers = async (req, res) => {
+  try {
+    const user = req.user;
+    const usernames = user.savedDevelopers || [];
+
+    if (usernames.length === 0) {
+      return res.json({ savedDevelopers: [] });
+    }
+
+    // Hydrate from LeaderboardEntry (GitHub-analyzed devs)
+    const leaderboardEntries = await LeaderboardEntry.find({
+      username: { $in: usernames }
+    }).lean();
+    const lbMap = new Map(leaderboardEntries.map(e => [e.username.toLowerCase(), e]));
+
+    // Hydrate from User collection (platform talent with githubUsername)
+    const talentUsers = await User.find({
+      githubUsername: { $in: usernames },
+      role: 'Freelancer',
+      isActive: true
+    }).select('firstName lastName email profilePicture profession professionalRole skills bio country githubUsername').lean();
+    const talentMap = new Map(talentUsers.map(u => [u.githubUsername.toLowerCase(), u]));
+
+    // Also find talent by matching username to firstName/lastName patterns or direct lookup
+    // For talent without GitHub usernames, try matching by _id string if stored that way
+    const objectIdUsernames = usernames.filter(u => /^[0-9a-fA-F]{24}$/.test(u));
+    let talentByIdMap = new Map();
+    if (objectIdUsernames.length > 0) {
+      const talentById = await User.find({
+        _id: { $in: objectIdUsernames },
+        role: 'Freelancer',
+        isActive: true
+      }).select('firstName lastName email profilePicture profession professionalRole skills bio country githubUsername').lean();
+      talentByIdMap = new Map(talentById.map(u => [u._id.toString(), u]));
+    }
+
+    // Build hydrated response preserving saved order
+    const hydrated = usernames.map(username => {
+      const key = username.toLowerCase();
+      const lb = lbMap.get(key);
+      const talent = talentMap.get(key) || talentByIdMap.get(username);
+
+      if (talent) {
+        // Platform talent profile
+        return {
+          username: talent.githubUsername || talent._id.toString(),
+          name: `${talent.firstName} ${talent.lastName}`.trim(),
+          avatar: talent.profilePicture || null,
+          level: lb ? lb.overall_level : null,
+          score: lb ? lb.overall_score : null,
+          location: talent.country || null,
+          github_url: talent.githubUsername ? `https://github.com/${talent.githubUsername}` : null,
+          primary_languages: lb ? (lb.primary_languages || []) : [],
+          skills: talent.skills || [],
+          type: 'talent',
+          profileId: talent._id.toString(),
+          profession: talent.profession || null,
+          savedAt: null // order preserved from array position
+        };
+      }
+
+      if (lb) {
+        // Leaderboard-only developer
+        return {
+          username: lb.username,
+          name: lb.name || lb.username,
+          avatar: lb.avatar || null,
+          level: lb.overall_level || null,
+          score: lb.overall_score || null,
+          location: lb.location || lb.country || null,
+          github_url: lb.github_url || `https://github.com/${lb.username}`,
+          primary_languages: lb.primary_languages || [],
+          skills: [],
+          type: 'developer',
+          profileId: null,
+          profession: null,
+          savedAt: null
+        };
+      }
+
+      // Minimal fallback — username only
+      return {
+        username,
+        name: username,
+        avatar: null,
+        level: null,
+        score: null,
+        location: null,
+        github_url: `https://github.com/${username}`,
+        primary_languages: [],
+        skills: [],
+        type: 'developer',
+        profileId: null,
+        profession: null,
+        savedAt: null
+      };
+    });
+
+    res.json({ savedDevelopers: hydrated });
+  } catch (error) {
+    logger.error('Get saved developers error', { error: error.message });
+    res.status(500).json({
+      error: 'Failed to fetch saved developers',
+      message: 'An error occurred while retrieving saved developers.'
+    });
+  }
+};
+
+/**
  * Add developer to saved list (Business Owners only)
  * POST /api/users/saved-developers
  */
 const addSavedDeveloper = async (req, res) => {
   try {
-    const { githubUsername } = req.body;
+    const { username } = req.body;
     const user = req.user;
 
     if (user.role !== 'BusinessOwner') {
@@ -212,22 +325,22 @@ const addSavedDeveloper = async (req, res) => {
       });
     }
 
-    if (!githubUsername) {
+    if (!username) {
       return res.status(400).json({
-        error: 'Missing GitHub username',
-        message: 'Please provide a GitHub username.'
+        error: 'Missing username',
+        message: 'Please provide a username.'
       });
     }
 
     // Check if already saved
-    if (user.savedDevelopers.includes(githubUsername.toLowerCase())) {
+    if (user.savedDevelopers.includes(username.toLowerCase())) {
       return res.status(400).json({
         error: 'Already saved',
         message: 'This developer is already in your saved list.'
       });
     }
 
-    user.savedDevelopers.push(githubUsername.toLowerCase());
+    user.savedDevelopers.push(username.toLowerCase());
     await user.save();
 
     res.status(200).json({
@@ -601,6 +714,7 @@ module.exports = {
   getUserById,
   updateUser,
   deleteUser,
+  getSavedDevelopers,
   addSavedDeveloper,
   removeSavedDeveloper,
   browseTalent,

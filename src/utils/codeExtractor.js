@@ -417,135 +417,307 @@ class CodeExtractor {
   }
 
   /**
+   * Check if a file path is a source code file (not config, not test, not docs)
+   * @param {string} filePath - File path
+   * @returns {boolean}
+   */
+  isSourceCodeFile(filePath) {
+    const codeExtensions = [
+      '.js', '.jsx', '.ts', '.tsx', '.py', '.java', '.cpp', '.c', '.cc', '.cxx',
+      '.cs', '.go', '.rs', '.php', '.rb', '.swift', '.kt', '.dart', '.scala',
+      '.clj', '.hs', '.elm', '.vue', '.svelte'
+    ];
+    const lower = filePath.toLowerCase();
+    // Must have a code extension
+    if (!codeExtensions.some(ext => lower.endsWith(ext))) return false;
+    // Exclude configs, tests, generated
+    const excludes = ['node_modules', 'dist/', 'build/', 'coverage/', '.git/', 'vendor/', '__pycache__'];
+    if (excludes.some(p => lower.includes(p))) return false;
+    return true;
+  }
+
+  /**
+   * Check if a file path is a test file
+   * @param {string} filePath - File path
+   * @returns {boolean}
+   */
+  isTestFile(filePath) {
+    const lower = filePath.toLowerCase();
+    return lower.includes('test') || lower.includes('spec') || lower.includes('__tests__');
+  }
+
+  /**
+   * Score README quality on a 0-5 scale based on content sections
+   * @param {string} content - README content
+   * @returns {number} Quality score 0-5
+   */
+  scoreReadmeQuality(content) {
+    if (!content || content.length < 30) return 0;
+    let score = 0;
+    // Has a title (# heading)
+    if (/^#\s+/m.test(content)) score += 1;
+    // Has description (>100 chars of non-heading text)
+    const nonHeading = content.replace(/^#+.*$/gm, '').trim();
+    if (nonHeading.length > 100) score += 1;
+    // Has installation or setup section
+    if (/install|setup|getting started|quick start/i.test(content)) score += 1;
+    // Has usage or example section
+    if (/usage|example|how to|demo|api/i.test(content)) score += 1;
+    // Has badges, screenshots, or links (polish signal)
+    if (/\!\[|\[!\[|https?:\/\/.*\.(png|jpg|gif|svg)/i.test(content) || content.includes('badge')) score += 1;
+    return score;
+  }
+
+  /**
    * Perform comprehensive repository analysis for scoring
+   * Returns ratio-based metrics instead of booleans for gradient scoring.
    * @param {Array} files - Repository files
    * @param {Object} repo - Repository metadata
-   * @returns {Object} Detailed analysis for scoring
+   * @returns {Object} Detailed analysis with ratio-based metrics for scoring
    */
   analyzeRepositoryForScoring(files, repo) {
     const analysis = {
       name: repo.name,
       description: repo.description,
-      // Code Quality indicators
+
+      // ── Ratio-based code metrics (0.0 – 1.0) ──
+      testFileRatio: 0,
+      testFileCount: 0,
+      sourceFileCount: 0,
+      totalFileCount: files.length,
+      errorHandlingDensity: 0,   // fraction of source files with try/catch/except
+      modernSyntaxRatio: 0,      // fraction using const/let/arrow/async
+      typeSafetyRatio: 0,        // fraction with TS or type annotations
+      documentationDensity: 0,   // fraction with JSDoc/docstrings
+      commentDensity: 0,         // fraction with any comments
+      avgFileSize: 0,            // average lines per source file
+
+      // ── Structure metrics ──
+      uniqueFolderCount: 0,
+      maxFolderDepth: 0,
+      hasEntryPoint: false,      // src/ or lib/ or app/ or index file
+      hasConfig: false,          // package.json, requirements.txt, etc.
+      hasBuildScript: false,     // scripts.build in package.json or Makefile
+
+      // ── README quality (0-5 gradient) ──
+      readmeQuality: 0,
+      readmeLength: 0,
+
+      // ── CI/CD maturity (0-3 gradient) ──
+      cicdMaturity: 0,           // 0=none, 1=basic workflow, 2=multi-step, 3=matrix/advanced
+      cicdFiles: [],
+
+      // ── Config & community signals ──
+      hasLockfile: false,
+      hasLintConfig: false,
+      hasEnvConfig: false,
+      hasGitignore: false,
+      hasLicense: false,
+      hasContributing: false,
+      hasChangelog: false,
+
+      // ── Complexity metrics ──
+      avgComplexity: 0,          // average complexity score across source files
+
+      // ── Additional data ──
+      frameworks: [],
+      patterns: [],
+      languages: [],
+
+      // ── Legacy compat (derived booleans for any old consumers) ──
       hasTests: false,
-      hasGoodStructure: false,
-      meaningfulCommitsRatio: 0.5,  // Would need commit data
-      hasConsistentStyle: false,
+      hasCICD: false,
       hasDocumentation: false,
+      hasGoodREADME: false,
+      isComplete: false,
+      hasGoodStructure: false,
+      isWellStructured: false,
+      hasConsistentStyle: false,
       hasCodeSmells: false,
-      
-      // Architecture indicators
       hasMVCPattern: false,
       hasModularStructure: false,
       hasSeparationOfConcerns: false,
       hasReusableComponents: false,
       hasServicesLayer: false,
-      
-      // Repository Quality indicators
-      isComplete: false,
-      hasCICD: false,
-      isWellStructured: false,
-      hasGoodREADME: false,
-      
-      // Additional data
-      frameworks: [],
-      patterns: [],
-      languages: []
+      meaningfulCommitsRatio: 0
     };
 
-    // Analyze files
+    let filesWithErrorHandling = 0;
+    let filesWithModernSyntax = 0;
+    let filesWithTypeAnnotations = 0;
+    let filesWithDocs = 0;
+    let filesWithComments = 0;
+    let totalSourceFiles = 0;
+    let totalLines = 0;
+    let testFiles = 0;
+    let complexitySum = 0;
+    let complexityCount = 0;
+
+    const uniqueFolders = new Set();
+
     for (const file of files) {
-      const path = file.path.toLowerCase();
+      const filePath = file.path || '';
+      const lower = filePath.toLowerCase();
       const content = file.content || '';
 
-      // Check for tests
-      if (path.includes('test') || path.includes('spec') || path.includes('__tests__')) {
-        analysis.hasTests = true;
+      // ── Track folder structure ──
+      const parts = filePath.split('/');
+      if (parts.length > 1) {
+        uniqueFolders.add(parts[0]);
+        analysis.maxFolderDepth = Math.max(analysis.maxFolderDepth, parts.length - 1);
       }
 
-      // Check for CI/CD
-      if (path.includes('.github/workflows') || path.includes('.gitlab-ci') || 
-          path.includes('circle') || path.includes('travis') || path.includes('jenkinsfile')) {
-        analysis.hasCICD = true;
+      // ── Detect test files ──
+      if (this.isTestFile(filePath)) {
+        testFiles++;
       }
 
-      // Check for documentation
-      if (path.includes('readme') || path.includes('.md') || content.includes('/**')) {
-        analysis.hasDocumentation = true;
-      }
-
-      // Check README quality
-      if (path.includes('readme.md')) {
-        const readmeLength = content.length;
-        analysis.hasGoodREADME = readmeLength > 500;  // Substantial README
-      }
-
-      // Check for MVC pattern
-      if (path.includes('model') || path.includes('view') || path.includes('controller')) {
-        analysis.hasMVCPattern = true;
-      }
-
-      // Check for modular structure
-      if (path.includes('components') || path.includes('modules') || path.includes('packages')) {
-        analysis.hasModularStructure = true;
-      }
-
-      // Check for separation of concerns
-      if (path.includes('services') || path.includes('utils') || path.includes('helpers') ||
-          path.includes('lib') || path.includes('core')) {
-        analysis.hasSeparationOfConcerns = true;
-        analysis.hasServicesLayer = true;
-      }
-
-      // Check for reusable components
-      if (path.includes('components') || path.includes('shared') || path.includes('common')) {
-        analysis.hasReusableComponents = true;
-      }
-
-      // Detect frameworks and languages
-      const snippet = this.processFile(file);
-      if (snippet) {
-        analysis.frameworks.push(...snippet.frameworks);
-        analysis.patterns.push(...snippet.patterns);
-        if (!analysis.languages.includes(snippet.language)) {
-          analysis.languages.push(snippet.language);
+      // ── CI/CD maturity (gradient) ──
+      if (lower.includes('.github/workflows') || lower.includes('.gitlab-ci') ||
+          lower.includes('circle') || lower.includes('travis') || lower.includes('jenkinsfile') ||
+          lower.includes('dockerfile') || lower.includes('docker-compose')) {
+        analysis.cicdFiles.push(filePath);
+        // Detect maturity level from workflow content
+        if (content.includes('matrix') || content.includes('strategy') || content.includes('stages')) {
+          analysis.cicdMaturity = Math.max(analysis.cicdMaturity, 3);
+        } else if (content.includes('jobs') || content.includes('steps') || content.includes('stage')) {
+          analysis.cicdMaturity = Math.max(analysis.cicdMaturity, 2);
+        } else {
+          analysis.cicdMaturity = Math.max(analysis.cicdMaturity, 1);
         }
-        
-        // Check code quality
-        if (snippet.codeQuality) {
-          if (snippet.codeQuality.hasComments && snippet.codeQuality.usesModernSyntax) {
-            analysis.hasConsistentStyle = true;
+      }
+
+      // ── README quality (gradient 0-5) ──
+      if (lower === 'readme.md' || lower === 'readme' || lower === 'readme.rst') {
+        analysis.readmeLength = content.length;
+        analysis.readmeQuality = this.scoreReadmeQuality(content);
+      }
+
+      // ── Config & community file detection ──
+      if (lower.includes('package-lock.json') || lower.includes('yarn.lock') ||
+          lower.includes('pnpm-lock') || lower.includes('bun.lockb') ||
+          lower.includes('gemfile.lock') || lower.includes('poetry.lock')) {
+        analysis.hasLockfile = true;
+      }
+      if (lower.includes('.eslint') || lower.includes('.prettier') ||
+          lower.includes('biome.json') || lower.includes('.flake8') ||
+          lower.includes('pylint') || lower.includes('.rubocop')) {
+        analysis.hasLintConfig = true;
+      }
+      if (lower.includes('.env.example') || lower.includes('.env.sample') ||
+          lower.includes('config/') || lower.includes('.env.template')) {
+        analysis.hasEnvConfig = true;
+      }
+      if (lower === '.gitignore') analysis.hasGitignore = true;
+      if (lower === 'license' || lower === 'license.md' || lower === 'licence') analysis.hasLicense = true;
+      if (lower.includes('contributing')) analysis.hasContributing = true;
+      if (lower.includes('changelog') || lower.includes('history')) analysis.hasChangelog = true;
+
+      // ── Entry point & config detection ──
+      if (lower.includes('src/') || lower.includes('lib/') || lower.includes('app/') ||
+          lower === 'index.js' || lower === 'index.ts' || lower === 'main.py') {
+        analysis.hasEntryPoint = true;
+      }
+      if (lower === 'package.json' || lower === 'requirements.txt' || lower === 'pyproject.toml' ||
+          lower === 'pom.xml' || lower === 'build.gradle' || lower === 'cargo.toml' ||
+          lower === 'go.mod' || lower === 'gemfile') {
+        analysis.hasConfig = true;
+        // Check for build script in package.json
+        if (lower === 'package.json' && (content.includes('"build"') || content.includes('"start"'))) {
+          analysis.hasBuildScript = true;
+        }
+      }
+
+      // ── Source code quality analysis (only real source files) ──
+      if (this.isSourceCodeFile(filePath) && !this.isTestFile(filePath)) {
+        totalSourceFiles++;
+        const lineCount = content.split('\n').length;
+        totalLines += lineCount;
+
+        // Error handling density
+        const errorPatterns = /try\s*[\{\(]|\.catch\s*\(|except\s|rescue\s|throw\s+new|raise\s|Error\(/;
+        if (errorPatterns.test(content)) filesWithErrorHandling++;
+
+        // Modern syntax (JS/TS/Python)
+        const modernPatterns = /\bconst\s|\blet\s|=>\s*[\{\(]|\basync\s|\bawait\s|\bimport\s.*\bfrom\b|\bexport\s|\.\.\.[\w\[]|`\$\{|f["']/;
+        if (modernPatterns.test(content)) filesWithModernSyntax++;
+
+        // Type safety (TypeScript, typed hints, Go/Rust/Java are inherently typed)
+        if (lower.endsWith('.ts') || lower.endsWith('.tsx') || lower.endsWith('.go') ||
+            lower.endsWith('.rs') || lower.endsWith('.java') || lower.endsWith('.cs') ||
+            lower.endsWith('.kt') || lower.endsWith('.swift') || lower.endsWith('.dart') ||
+            content.includes(': string') || content.includes(': number') || content.includes(': boolean') ||
+            content.includes('interface ') || content.includes('type ') || /def\s+\w+\(.*:/.test(content)) {
+          filesWithTypeAnnotations++;
+        }
+
+        // Documentation (JSDoc, docstrings, etc.)
+        if (content.includes('/**') || content.includes('"""') || content.includes("'''") ||
+            content.includes('/// ') || content.includes('//! ')) {
+          filesWithDocs++;
+        }
+
+        // Comments (any kind)
+        if (content.includes('//') || content.includes('/*') || /^#[^!]/m.test(content)) {
+          filesWithComments++;
+        }
+
+        // Complexity
+        const snippet = this.processFile(file);
+        if (snippet) {
+          complexitySum += snippet.complexity;
+          complexityCount++;
+          analysis.frameworks.push(...snippet.frameworks);
+          analysis.patterns.push(...snippet.patterns);
+          if (!analysis.languages.includes(snippet.language)) {
+            analysis.languages.push(snippet.language);
           }
         }
       }
     }
 
-    // Check for good structure (multiple organized folders)
-    const uniqueFolders = new Set();
-    files.forEach(file => {
-      const parts = file.path.split('/');
-      if (parts.length > 1) {
-        uniqueFolders.add(parts[0]);
-      }
-    });
+    // ── Calculate ratios ──
+    analysis.testFileCount = testFiles;
+    analysis.sourceFileCount = totalSourceFiles;
+    analysis.testFileRatio = files.length > 0 ? testFiles / files.length : 0;
+    analysis.errorHandlingDensity = totalSourceFiles > 0 ? filesWithErrorHandling / totalSourceFiles : 0;
+    analysis.modernSyntaxRatio = totalSourceFiles > 0 ? filesWithModernSyntax / totalSourceFiles : 0;
+    analysis.typeSafetyRatio = totalSourceFiles > 0 ? filesWithTypeAnnotations / totalSourceFiles : 0;
+    analysis.documentationDensity = totalSourceFiles > 0 ? filesWithDocs / totalSourceFiles : 0;
+    analysis.commentDensity = totalSourceFiles > 0 ? filesWithComments / totalSourceFiles : 0;
+    analysis.avgFileSize = totalSourceFiles > 0 ? totalLines / totalSourceFiles : 0;
+    analysis.uniqueFolderCount = uniqueFolders.size;
+    analysis.avgComplexity = complexityCount > 0 ? complexitySum / complexityCount : 0;
+
+    // ── Derive legacy booleans for backward compatibility ──
+    analysis.hasTests = testFiles > 0;
+    analysis.hasCICD = analysis.cicdMaturity > 0;
+    analysis.hasDocumentation = analysis.documentationDensity > 0.1 || analysis.readmeLength > 100;
+    analysis.hasGoodREADME = analysis.readmeQuality >= 3;
     analysis.hasGoodStructure = uniqueFolders.size >= 3;
     analysis.isWellStructured = uniqueFolders.size >= 3;
+    analysis.isComplete = analysis.hasEntryPoint && analysis.hasConfig && files.length > 5;
+    analysis.hasConsistentStyle = analysis.modernSyntaxRatio > 0.5 && analysis.commentDensity > 0.3;
+    analysis.hasCodeSmells = files.filter(f => f.size > 100000).length > (files.length * 0.3);
+    analysis.hasMVCPattern = files.some(f => {
+      const p = f.path.toLowerCase();
+      return (p.includes('/models/') || p.includes('/views/') || p.includes('/controllers/'));
+    });
+    analysis.hasModularStructure = files.some(f => {
+      const p = f.path.toLowerCase();
+      return p.includes('/components/') || p.includes('/modules/');
+    });
+    analysis.hasSeparationOfConcerns = files.some(f => {
+      const p = f.path.toLowerCase();
+      return p.includes('/services/') || p.includes('/utils/') || p.includes('/helpers/');
+    });
+    analysis.hasReusableComponents = files.some(f => {
+      const p = f.path.toLowerCase();
+      return p.includes('/components/') || p.includes('/shared/') || p.includes('/common/');
+    });
+    analysis.hasServicesLayer = files.some(f => f.path.toLowerCase().includes('/services/'));
 
-    // Check if project is complete (has main code + config files)
-    const hasMainCode = files.some(f => 
-      f.path.includes('src/') || f.path.includes('lib/') || f.path.includes('app/')
-    );
-    const hasConfig = files.some(f => 
-      f.path.includes('package.json') || f.path.includes('requirements.txt') || 
-      f.path.includes('pom.xml') || f.path.includes('build.gradle')
-    );
-    analysis.isComplete = hasMainCode && hasConfig && files.length > 5;
-
-    // Check for code smells (very large files, poor naming, etc.)
-    const largeFiles = files.filter(f => f.size > 100000);  // > 100KB
-    analysis.hasCodeSmells = largeFiles.length > (files.length * 0.3);
-
-    // Unique frameworks and patterns
+    // ── Unique frameworks and patterns ──
     analysis.frameworks = [...new Set(analysis.frameworks)];
     analysis.patterns = [...new Set(analysis.patterns)];
 

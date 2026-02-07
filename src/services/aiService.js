@@ -10,7 +10,7 @@ class AIService {
       apiKey: process.env.OPENAI_API_KEY,
     });
     
-    this.model = 'gpt-4o-mini'; // Use gpt-4o-mini for cost efficiency
+    this.model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
     this.maxTokens = 4000;
   }
 
@@ -36,7 +36,7 @@ class AIService {
           }
         ],
         max_tokens: this.maxTokens,
-        temperature: 0.3, // Lower temperature for more consistent grading
+        temperature: 0.2, // Low temperature for deterministic grading
         response_format: { type: "json_object" } // Force JSON response
       });
 
@@ -109,7 +109,7 @@ class AIService {
           }
         ],
         max_tokens: this.maxTokens,
-        temperature: 0.3,
+        temperature: 0.2,
         response_format: { type: "json_object" }
       });
 
@@ -132,54 +132,59 @@ class AIService {
    * @returns {string} System prompt
    */
   getEnhancedSystemPrompt() {
-    return `You are an expert senior software engineer and technical recruiter with 15+ years of experience.
+    return `You are a senior engineering hiring consultant analyzing a developer's GitHub portfolio.
 
-Your task is to analyze GitHub developers and provide TWO types of insights:
-1. RECRUITER SUMMARY - Non-technical, hiring-focused insights
-2. ENGINEER BREAKDOWN - Deep technical analysis
+You will receive structured data about a developer's repositories including:
+- Repository metadata (languages, stars, forks, activity dates)
+- Code samples from their most significant files (including test files)
+- Pre-computed metrics (test ratios, commit patterns, architecture signals)
+- Numeric scores in 5 categories for context
+
+Your job is to provide TWO complementary perspectives:
+
+**RECRUITER PERSPECTIVE** — Written for non-technical hiring managers:
+- What roles is this person suited for? Be specific (e.g., "Mid-level React/Node.js developer with growing backend skills")
+- What are their working style signals? (consistent committer, project finisher, hobby coder, etc.)
+- What are honest hiring risks? Frame constructively.
+- Rate their portfolio readiness: are these projects presentable to employers?
+
+**ENGINEER PERSPECTIVE** — Written for technical interviewers:
+- What specific design patterns and architectural decisions do you see?
+- How mature is their error handling, testing, and type safety?
+- What complexity level are they operating at? (CRUD apps vs. service architecture vs. distributed systems vs. algorithm-heavy)
+- What would you probe in a technical interview based on what you see?
+- What are concrete improvement areas with actionable next steps?
 
 RESPONSE FORMAT (JSON only, no additional text):
 {
   "recruiter_summary": {
-    "top_strengths": ["3-5 non-technical strengths for hiring"],
-    "risks_or_weaknesses": ["2-4 hiring concerns or red flags"],
-    "recommended_role_level": "e.g., Senior Full-Stack Engineer, Mid-Level Backend Developer",
-    "activity_flag": "Active | Semi-active | Inactive",
-    "tech_stack_summary": ["key technologies, frameworks"],
-    "work_history_signals": ["observable patterns about work style"]
+    "top_strengths": ["3-5 evidence-backed strengths relevant to hiring"],
+    "risks_or_weaknesses": ["2-4 honest hiring concerns, framed constructively"],
+    "recommended_role_level": "Specific role title with level, e.g. Mid-Level React/Node.js Developer",
+    "portfolio_readiness": "One sentence: how presentable is this portfolio to employers?"
   },
   "engineer_breakdown": {
-    "code_patterns": ["specific coding patterns observed"],
-    "architecture_analysis": ["architecture insights"],
+    "code_patterns": ["4-6 specific coding patterns and design patterns observed, with file references where possible"],
+    "architecture_analysis": ["2-4 specific architectural decisions observed"],
     "testing_analysis": {
-      "test_presence": true|false,
-      "test_libraries_seen": ["Jest", "Pytest", etc],
-      "testing_patterns": ["unit tests", "integration tests", etc]
+      "maturity": "None | Basic | Moderate | Comprehensive",
+      "test_libraries_seen": ["Jest", "Mocha", etc.],
+      "details": "Specific observations about test quality and coverage approach"
     },
-    "complexity_insights": ["observations about code complexity"],
-    "commit_message_quality": "Good - follows conventions | Fair | Needs improvement",
-    "language_breakdown_insights": ["proficiency observations for each language"],
-    "design_patterns_used": ["Factory", "Singleton", "MVC", etc],
-    "code_smells": ["any anti-patterns or issues"],
-    "best_practices": ["good practices observed"],
-    "improvement_areas": ["specific actionable improvements"]
+    "complexity_insights": ["observations about code complexity level"],
+    "commit_message_quality": "Good | Fair | Needs improvement",
+    "notable_implementations": ["1-3 impressive or interesting code sections with specifics"],
+    "improvement_areas": ["3-5 ranked, actionable suggestions — include anti-patterns or code smells you observed"],
+    "interview_probes": ["2-3 technical questions you would ask based on their code"]
   }
 }
 
-RECRUITER SUMMARY GUIDELINES:
-- Use non-technical language
-- Focus on hiring signals (reliability, consistency, growth)
-- Highlight red flags honestly but constructively
-- Recommend appropriate role level based on evidence
-
-ENGINEER BREAKDOWN GUIDELINES:
-- Be technically specific
-- Reference actual code patterns, not generic statements
-- Identify design patterns by name
-- Provide actionable technical feedback
-- Note testing maturity and practices
-
-Be honest, constructive, and specific. Base all observations on provided code examples.`;
+CRITICAL RULES:
+- Base EVERY observation on specific evidence from the provided code. Do not make generic statements.
+- If you cannot determine something from the data, say "Insufficient data to assess" — do not guess.
+- Do NOT assess years of experience — that is unknowable from code alone.
+- Do NOT use the pre-computed scores to determine your qualitative analysis — form your own opinion from the code.
+- Be honest but respectful. This analysis will be shown to the developer.`;
   }
 
   /**
@@ -187,37 +192,20 @@ Be honest, constructive, and specific. Base all observations on provided code ex
    * @returns {string} System prompt
    */
   getSystemPrompt() {
-    return `You are an expert senior software engineer and technical interviewer with 15+ years of experience across multiple programming languages and frameworks.
+    return `You are a senior engineering hiring consultant analyzing a developer's GitHub portfolio.
 
-Your task is to analyze GitHub developer profiles and provide accurate, constructive grading based on code quality, architecture, and best practices.
+Analyze the provided code and repository data. Base every observation on specific evidence from the code.
 
-GRADING CRITERIA:
-- **Beginner (0-2 years equivalent)**: Basic syntax, simple scripts, minimal structure, few best practices
-- **Intermediate (2-5 years equivalent)**: Good structure, some patterns, error handling, readable code, basic testing
-- **Advanced (5+ years equivalent)**: Excellent architecture, design patterns, comprehensive testing, documentation, performance optimization, complex problem-solving
-
-ANALYSIS FOCUS:
-1. Code structure and organization
-2. Use of design patterns and best practices
-3. Error handling and edge cases
-4. Code readability and maintainability  
-5. Testing and documentation quality
-6. Project complexity and technical depth
-7. Consistency across repositories
-8. Modern language features and frameworks
-
-RESPONSE FORMAT:
-You must respond with valid JSON only, no additional text:
-
+RESPONSE FORMAT (JSON only):
 {
-  "grade": "Beginner|Intermediate|Advanced",
-  "reasoning": "2-3 sentence explanation of the grade decision",
-  "strengths": ["strength1", "strength2", "strength3"],
-  "weaknesses": ["weakness1", "weakness2", "weakness3"],
-  "suggestions": ["suggestion1", "suggestion2", "suggestion3"]
+  "grade": "Entry|Junior|Mid-Level|Senior|Expert",
+  "reasoning": "2-3 sentence explanation based on specific code observations",
+  "strengths": ["evidence-backed strength 1", "evidence-backed strength 2", "evidence-backed strength 3"],
+  "weaknesses": ["specific weakness 1", "specific weakness 2", "specific weakness 3"],
+  "suggestions": ["actionable suggestion 1", "actionable suggestion 2", "actionable suggestion 3"]
 }
 
-Be honest but constructive. Focus on specific technical observations from the code provided.`;
+CRITICAL: If you cannot determine something, say so. Do not make generic statements.`;
   }
 
   /**
@@ -233,10 +221,11 @@ Be honest but constructive. Focus on specific technical observations from the co
         top_strengths: response.strengths || ["Shows technical capability"],
         risks_or_weaknesses: response.weaknesses || ["Could benefit from more experience"],
         recommended_role_level: `${scores.overall_level} Developer`,
-        activity_flag: "Semi-active",
-        tech_stack_summary: [],
-        work_history_signals: []
+        portfolio_readiness: "Needs polish"
       };
+    }
+    if (!response.recruiter_summary.portfolio_readiness) {
+      response.recruiter_summary.portfolio_readiness = "Needs polish";
     }
 
     // Ensure engineer_breakdown exists
@@ -245,18 +234,30 @@ Be honest but constructive. Focus on specific technical observations from the co
         code_patterns: response.strengths || [],
         architecture_analysis: [],
         testing_analysis: {
-          test_presence: false,
+          maturity: "Basic",
           test_libraries_seen: [],
-          testing_patterns: []
+          details: "Insufficient data to assess"
         },
         complexity_insights: [],
         commit_message_quality: "Fair",
-        language_breakdown_insights: [],
-        design_patterns_used: [],
-        code_smells: response.weaknesses || [],
-        best_practices: [],
-        improvement_areas: response.suggestions || []
+        notable_implementations: [],
+        improvement_areas: response.suggestions || [],
+        interview_probes: []
       };
+    }
+    // Ensure optional fields exist
+    if (!response.engineer_breakdown.interview_probes) {
+      response.engineer_breakdown.interview_probes = [];
+    }
+    if (!response.engineer_breakdown.notable_implementations) {
+      response.engineer_breakdown.notable_implementations = [];
+    }
+    if (!response.engineer_breakdown.improvement_areas) {
+      response.engineer_breakdown.improvement_areas = [];
+    }
+    // Normalize testing_analysis shape
+    if (response.engineer_breakdown.testing_analysis && !response.engineer_breakdown.testing_analysis.maturity) {
+      response.engineer_breakdown.testing_analysis.maturity = response.engineer_breakdown.testing_analysis.test_presence ? "Basic" : "None";
     }
 
     // Clean and validate arrays
@@ -264,6 +265,8 @@ Be honest but constructive. Focus on specific technical observations from the co
     response.recruiter_summary.risks_or_weaknesses = this.cleanArray(response.recruiter_summary.risks_or_weaknesses, "Limited experience");
     response.engineer_breakdown.code_patterns = this.cleanArray(response.engineer_breakdown.code_patterns, "Basic patterns");
     response.engineer_breakdown.architecture_analysis = this.cleanArray(response.engineer_breakdown.architecture_analysis, "Standard structure");
+    response.engineer_breakdown.improvement_areas = this.cleanArray(response.engineer_breakdown.improvement_areas, "Continue building projects");
+    response.engineer_breakdown.interview_probes = this.cleanArray(response.engineer_breakdown.interview_probes, "Discuss architecture decisions in main project");
 
     return response;
   }
@@ -274,21 +277,26 @@ Be honest but constructive. Focus on specific technical observations from the co
    * @returns {Object} Validated and cleaned response
    */
   validateAndCleanResponse(response) {
-    const validGrades = ['Beginner', 'Intermediate', 'Advanced'];
+    const validGrades = ['Entry', 'Junior', 'Mid-Level', 'Senior', 'Expert',
+                         'Beginner', 'Intermediate', 'Advanced']; // accept legacy too
     
     // Ensure all required fields exist
     const result = {
-      grade: response.grade || 'Intermediate',
+      grade: response.grade || 'Mid-Level',
       reasoning: response.reasoning || 'Unable to generate detailed reasoning.',
       strengths: Array.isArray(response.strengths) ? response.strengths : [],
       weaknesses: Array.isArray(response.weaknesses) ? response.weaknesses : [],
       suggestions: Array.isArray(response.suggestions) ? response.suggestions : []
     };
 
+    // Map legacy grades to new scale
+    const gradeMap = { 'Beginner': 'Entry', 'Intermediate': 'Mid-Level', 'Advanced': 'Senior' };
+    if (gradeMap[result.grade]) result.grade = gradeMap[result.grade];
+
     // Validate grade
-    if (!validGrades.includes(result.grade)) {
-      logger.warn('Invalid grade received from OpenAI, defaulting to Intermediate', { receivedGrade: result.grade });
-      result.grade = 'Intermediate';
+    if (!['Entry', 'Junior', 'Mid-Level', 'Senior', 'Expert'].includes(result.grade)) {
+      logger.warn('Invalid grade received from OpenAI, defaulting to Mid-Level', { receivedGrade: result.grade });
+      result.grade = 'Mid-Level';
     }
 
     // Ensure arrays have at least one item and limit length

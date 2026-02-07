@@ -198,9 +198,9 @@ class GitHubController {
         .slice(0, 5)
         .map(([lang]) => lang);
 
-      // Step 8: Build AI analysis prompt
+      // Step 8: Build AI analysis prompt (now includes pre-computed scores as context)
       logger.info('Building AI analysis prompt');
-      const prompt = promptBuilder.buildEvaluationPrompt(username, codeData, qualityRepos);
+      const prompt = promptBuilder.buildEvaluationPrompt(username, codeData, qualityRepos, scores, activityData);
 
       // Step 9: Get AI insights
       logger.info('Generating AI insights');
@@ -231,23 +231,27 @@ class GitHubController {
       // Step 11: Build repo-level details for engineer view
       const repo_level_details = repoDetails.slice(0, 10).map(repo => {
         const repoMeta = qualityRepos.find(r => r.name === repo.name);
+        // Gradient scoring per repo: avg of key ratios × 100
+        const repoScoreRaw = (
+          (repo.errorHandlingDensity || 0) * 20 +
+          (repo.modernSyntaxRatio || 0) * 20 +
+          (repo.typeSafetyRatio || 0) * 15 +
+          (repo.testFileRatio || 0) * 20 +
+          (repo.isComplete || (repo.hasEntryPoint && repo.hasConfig) ? 15 : 0) +
+          (repo.cicdMaturity > 0 ? 10 : 0)
+        );
         return {
           repo_name: repo.name,
-          score: Math.round(
-            (repo.isComplete ? 25 : 0) +
-            (repo.hasTests ? 25 : 0) +
-            (repo.hasGoodStructure ? 25 : 0) +
-            (repo.hasCICD ? 25 : 0)
-          ),
+          score: Math.round(Math.min(100, repoScoreRaw)),
           notes: this.generateRepoNotes(repo),
           languages: repo.languages,
-          complexity: repo.isComplete && repo.frameworks.length > 2 ? 'High' : 'Medium',
+          complexity: (repo.avgComplexity || 0) > 5 ? 'High' : (repo.avgComplexity || 0) > 2 ? 'Medium' : 'Low',
           stars: repoMeta?.stargazers_count || 0,
           forks: repoMeta?.forks_count || 0
         };
       });
 
-      // Step 12: Assemble complete response per BACKEND_SPEC.md
+      // Step 12: Assemble complete response (new 100-point system)
       const response = {
         profile: {
           username: userProfile.username,
@@ -264,41 +268,44 @@ class GitHubController {
         scores: {
           overall_level: scores.overall_level,
           overall_score: scores.overall_score,
+          max_score: 100,
           job_readiness_score: scores.job_readiness_score,
           tech_depth_score: scores.tech_depth_score,
-          code_quality: scores.code_quality,
-          project_diversity: scores.project_diversity,
-          activity: scores.activity,
-          architecture: scores.architecture,
-          repo_quality: scores.repo_quality,
-          professionalism: scores.professionalism
+          hiring_readiness: scores.hiring_readiness,
+          // 5-category breakdown
+          code_sophistication: scores.code_sophistication,
+          engineering_practices: scores.engineering_practices,
+          project_maturity: scores.project_maturity,
+          contribution_activity: scores.contribution_activity,
+          breadth_and_depth: scores.breadth_and_depth
         },
         recruiter_summary: {
           top_strengths: aiInsights.recruiter_summary.top_strengths,
           risks_or_weaknesses: aiInsights.recruiter_summary.risks_or_weaknesses,
           recommended_role_level: aiInsights.recruiter_summary.recommended_role_level,
-          hiring_recommendation: scoringService.getHiringRecommendation(scores.overall_score),
-          activity_flag: activityData.activityStatus,
+          hiring_readiness: scores.hiring_readiness,
           project_maturity_rating: scoringService.getProjectMaturityRating(repoDetails),
-          tech_stack_summary: aiInsights.recruiter_summary.tech_stack_summary || primary_languages,
-          work_history_signals: aiInsights.recruiter_summary.work_history_signals || []
+          portfolio_readiness: aiInsights.recruiter_summary.portfolio_readiness || 'Needs polish'
         },
         engineer_breakdown: {
           code_patterns: aiInsights.engineer_breakdown.code_patterns,
           architecture_analysis: aiInsights.engineer_breakdown.architecture_analysis,
           testing_analysis: {
+            maturity: aiInsights.engineer_breakdown.testing_analysis?.maturity || 'Basic',
             test_presence: repoDetails.some(r => r.hasTests),
+            test_file_ratio: repoDetails.length > 0
+              ? (repoDetails.reduce((s, r) => s + (r.testFileRatio || 0), 0) / repoDetails.length).toFixed(2)
+              : '0',
             test_libraries_seen: aiInsights.engineer_breakdown.testing_analysis?.test_libraries_seen || [],
-            testing_patterns: aiInsights.engineer_breakdown.testing_analysis?.testing_patterns || []
+            details: aiInsights.engineer_breakdown.testing_analysis?.details || ''
           },
           complexity_insights: aiInsights.engineer_breakdown.complexity_insights,
-          commit_message_quality: aiInsights.engineer_breakdown.commit_message_quality || "Fair",
+          commit_message_quality: aiInsights.engineer_breakdown.commit_message_quality || 'Fair',
           language_breakdown: language_breakdown,
           repo_level_details: repo_level_details,
-          design_patterns_used: aiInsights.engineer_breakdown.design_patterns_used || [],
-          code_smells: aiInsights.engineer_breakdown.code_smells || [],
-          best_practices: aiInsights.engineer_breakdown.best_practices || [],
-          improvement_areas: aiInsights.engineer_breakdown.improvement_areas || []
+          notable_implementations: aiInsights.engineer_breakdown.notable_implementations || [],
+          improvement_areas: aiInsights.engineer_breakdown.improvement_areas || [],
+          interview_probes: aiInsights.engineer_breakdown.interview_probes || []
         }
       };
 
@@ -309,7 +316,7 @@ class GitHubController {
       });
 
       const duration = Date.now() - startTime;
-      logger.info('Evaluation complete', { username, level: scores.overall_level, score: scores.overall_score, maxScore: 110, durationMs: duration });
+      logger.info('Evaluation complete', { username, level: scores.overall_level, score: scores.overall_score, maxScore: 100, durationMs: duration });
       
       // Add performance warning if too slow
       if (duration > 5000) {
@@ -379,11 +386,13 @@ class GitHubController {
   generateRepoNotes(repo) {
     const notes = [];
     
-    if (repo.isComplete) notes.push('Complete project');
-    if (repo.hasTests) notes.push('Has tests');
-    if (repo.hasCICD) notes.push('CI/CD configured');
-    if (repo.hasGoodStructure) notes.push('Well-structured');
-    if (repo.hasDocumentation) notes.push('Documented');
+    if (repo.isComplete || (repo.hasEntryPoint && repo.hasConfig)) notes.push('Complete project');
+    if (repo.testFileCount > 0) notes.push(`${repo.testFileCount} test file${repo.testFileCount > 1 ? 's' : ''}`);
+    if (repo.cicdMaturity > 0) notes.push(`CI/CD (level ${repo.cicdMaturity})`);
+    if (repo.uniqueFolderCount >= 3 || repo.hasGoodStructure) notes.push('Well-structured');
+    if (repo.readmeQuality >= 3) notes.push('Good README');
+    if (repo.hasDocumentation || repo.documentationDensity > 0.2) notes.push('Documented');
+    if (repo.typeSafetyRatio > 0.5) notes.push('Type-safe');
     if (repo.frameworks.length > 0) notes.push(`Uses ${repo.frameworks.slice(0, 2).join(', ')}`);
     
     return notes.length > 0 ? notes.join(', ') : 'Basic project structure';

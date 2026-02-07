@@ -159,10 +159,10 @@ class GitHubService {
         // Decode base64 content
         const content = Buffer.from(response.data.content, 'base64').toString('utf-8');
         
-        // Limit content length to first 150 lines to stay within token limits
+        // Limit content length to first 300 lines to allow deeper analysis
         const lines = content.split('\n');
-        if (lines.length > 150) {
-          return lines.slice(0, 150).join('\n') + '\n// ... (truncated for analysis)';
+        if (lines.length > 300) {
+          return lines.slice(0, 300).join('\n') + '\n// ... (truncated for analysis)';
         }
         
         return content;
@@ -203,6 +203,8 @@ class GitHubService {
     ];
 
     // Directories/files to exclude
+    // NOTE: Test files are NO LONGER excluded — they are valuable for analysis.
+    //       The codeExtractor separates them from source files for scoring.
     const excludePatterns = [
       'node_modules',
       'dist',
@@ -214,17 +216,10 @@ class GitHubService {
       '__pycache__',
       '.next',
       '.nuxt',
-      'public',
-      'assets',
+      'public/assets',
       'images',
       'img',
       'fonts',
-      'test',
-      'tests',
-      '__tests__',
-      'spec',
-      '.test.',
-      '.spec.',
       'mock',
       'fixture',
       'example',
@@ -322,6 +317,11 @@ class GitHubService {
       let commitsLast30Days = 0;
       let commitsLast90Days = 0;
       const weeklyCommits = new Map();
+      let lastCommitDate = null;
+
+      // Commit message quality tracking
+      let totalMessageCount = 0;
+      let qualityMessageCount = 0;
 
       // Sample up to 10 most recent repos for activity
       const reposToCheck = repos.slice(0, 10);
@@ -346,9 +346,23 @@ class GitHubService {
               commitsLast90Days++;
             }
 
+            // Track most recent commit
+            if (!lastCommitDate || commitDate > lastCommitDate) {
+              lastCommitDate = commitDate;
+            }
+
             // Track weekly commits
             const weekKey = this.getWeekKey(commitDate);
             weeklyCommits.set(weekKey, (weeklyCommits.get(weekKey) || 0) + 1);
+
+            // Commit message quality analysis
+            const msg = (commit.commit.message || '').split('\n')[0]; // first line only
+            totalMessageCount++;
+            // A "quality" message is >20 chars and not just "fix", "update", "wip", etc.
+            const trivialPattern = /^(fix|update|wip|tmp|test|merge|revert|initial commit|first commit|\.)$/i;
+            if (msg.length > 20 && !trivialPattern.test(msg.trim())) {
+              qualityMessageCount++;
+            }
           });
         } catch (error) {
           logger.warn(`Failed to fetch commits for ${repo.name}`, { error: error.message });
@@ -363,11 +377,23 @@ class GitHubService {
         activityStatus = 'Semi-active';
       }
 
+      // Days since last commit (for smooth recency scoring)
+      const daysSinceLastCommit = lastCommitDate
+        ? Math.floor((now.getTime() - lastCommitDate.getTime()) / (24 * 60 * 60 * 1000))
+        : 365; // default to 1 year if no commits found
+
+      // Commit message quality ratio (0-1)
+      const commitMessageQuality = totalMessageCount > 0
+        ? qualityMessageCount / totalMessageCount
+        : 0;
+
       return {
         commitsLast30Days,
         commitsLast90Days,
         weeksWithCommits: weeklyCommits.size,
-        activityStatus
+        activityStatus,
+        daysSinceLastCommit,
+        commitMessageQuality
       };
     } catch (error) {
       logger.warn('Failed to fetch commit activity', { error: error.message });

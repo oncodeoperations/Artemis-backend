@@ -27,6 +27,7 @@ class LeaderboardService {
         overall_level: evaluationResult.scores.overall_level,
         job_readiness_score: evaluationResult.scores.job_readiness_score,
         tech_depth_score: evaluationResult.scores.tech_depth_score,
+        hiring_readiness: evaluationResult.scores.hiring_readiness,
         category_scores: evaluationResult.scores.category_scores,
         
         // Technical details

@@ -20,24 +20,32 @@ const LeaderboardEntrySchema = new mongoose.Schema({
   location: String,
   country: { type: String, default: 'Unknown', index: true }, // ISO country code
   
-  // Scores (from evaluation)
+  // Scores (from evaluation — new 100-point system)
   overall_score: { 
     type: Number, 
     required: true, 
     index: true,
     min: 0,
-    max: 110
+    max: 100
   },
   overall_level: { 
     type: String, 
     required: true,
-    enum: ['Beginner', 'Intermediate', 'Senior', 'Expert']
+    enum: ['Entry', 'Junior', 'Mid-Level', 'Senior', 'Expert',
+           'Beginner', 'Intermediate'] // legacy compat
   },
   job_readiness_score: { type: Number, min: 0, max: 100 },
   tech_depth_score: { type: Number, min: 0, max: 100 },
+  hiring_readiness: { type: String, enum: ['Strong Hire', 'Hire', 'Consider', 'Develop'] },
   
-  // Category Breakdown
+  // Category Breakdown (new 5-category system)
   category_scores: {
+    code_sophistication: { type: Number, min: 0, max: 25 },
+    engineering_practices: { type: Number, min: 0, max: 25 },
+    project_maturity: { type: Number, min: 0, max: 20 },
+    contribution_activity: { type: Number, min: 0, max: 15 },
+    breadth_and_depth: { type: Number, min: 0, max: 15 },
+    // Legacy fields (kept for backward compat with existing entries)
     code_quality: { type: Number, min: 0, max: 20 },
     project_diversity: { type: Number, min: 0, max: 20 },
     activity: { type: Number, min: 0, max: 20 },

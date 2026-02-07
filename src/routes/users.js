@@ -225,6 +225,18 @@ router.post('/saved-developers', requireAuth, requireVerification, requireRole('
 
 /**
  * @swagger
+ * /api/users/saved-developers:
+ *   get:
+ *     summary: Get saved developers with hydrated profiles (BusinessOwner only)
+ *     tags: [Users]
+ *     responses:
+ *       200:
+ *         description: List of saved developers with profile data
+ */
+router.get('/saved-developers', requireAuth, requireVerification, requireRole('BusinessOwner'), userController.getSavedDevelopers);
+
+/**
+ * @swagger
  * /api/users/saved-developers/{username}:
  *   delete:
  *     summary: Remove developer from saved list (BusinessOwner only)

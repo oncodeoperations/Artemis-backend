@@ -9,16 +9,18 @@ class PromptBuilder {
    * @param {string} username - GitHub username
    * @param {Array} codeData - Array of extracted code data from repositories
    * @param {Array} allRepos - All repositories metadata
+   * @param {Object} [scores] - Pre-computed scores (optional, for enhanced prompt)
+   * @param {Object} [activityData] - Activity metrics (optional)
    * @returns {string} Complete prompt for AI analysis
    */
-  buildEvaluationPrompt(username, codeData, allRepos) {
-    const prompt = this.buildPromptSections(username, codeData, allRepos);
+  buildEvaluationPrompt(username, codeData, allRepos, scores, activityData) {
+    const prompt = this.buildPromptSections(username, codeData, allRepos, scores, activityData);
     
     // Estimate token count and truncate if necessary
     const estimatedTokens = this.estimateTokens(prompt);
-    if (estimatedTokens > 12000) { // Leave room for response
+    if (estimatedTokens > 14000) { // Leave room for response
       logger.warn('Prompt exceeds token limit, truncating', { estimatedTokens });
-      return this.buildTruncatedPrompt(username, codeData, allRepos);
+      return this.buildTruncatedPrompt(username, codeData, allRepos, scores, activityData);
     }
     
     return prompt;
@@ -31,10 +33,10 @@ class PromptBuilder {
    * @param {Array} allRepos - All repositories
    * @returns {string} Complete prompt
    */
-  buildPromptSections(username, codeData, allRepos) {
+  buildPromptSections(username, codeData, allRepos, scores, activityData) {
     const sections = [
       this.buildHeader(),
-      this.buildDeveloperOverview(username, allRepos),
+      this.buildDeveloperOverview(username, allRepos, scores, activityData),
       this.buildRepositoryAnalysis(codeData),
       this.buildCodeSamples(codeData),
       this.buildInstructions()
@@ -48,23 +50,10 @@ class PromptBuilder {
    * @returns {string} Header section
    */
   buildHeader() {
-    return `You are an expert senior software engineer and technical interviewer.
-Analyze the following GitHub developer's work and grade them as Beginner, Intermediate, or Advanced.
-
-GRADING CRITERIA:
-• Beginner (0-2 years equivalent): Basic syntax, simple scripts, minimal structure, few best practices
-• Intermediate (2-5 years equivalent): Good structure, some patterns, error handling, readable code, basic testing  
-• Advanced (5+ years equivalent): Excellent architecture, design patterns, comprehensive testing, documentation, performance optimization, complex problem-solving
-
-ANALYSIS FOCUS:
-1. Code structure and organization
-2. Use of design patterns and best practices
-3. Error handling and edge cases
-4. Code readability and maintainability
-5. Testing and documentation quality
-6. Project complexity and technical depth
-7. Consistency across repositories
-8. Modern language features and frameworks`;
+    return `Analyze the following GitHub developer's portfolio.
+Base EVERY observation on specific evidence from the code samples below.
+If you cannot determine something, say "Insufficient data" — do not guess.
+Do NOT assess years of experience.`;
   }
 
   /**
@@ -73,19 +62,44 @@ ANALYSIS FOCUS:
    * @param {Array} allRepos - All repositories
    * @returns {string} Developer overview
    */
-  buildDeveloperOverview(username, allRepos) {
+  buildDeveloperOverview(username, allRepos, scores, activityData) {
     const languages = [...new Set(allRepos.map(repo => repo.language).filter(Boolean))];
     const totalStars = allRepos.reduce((sum, repo) => sum + (repo.stargazers_count || 0), 0);
     const totalForks = allRepos.reduce((sum, repo) => sum + (repo.forks_count || 0), 0);
     const recentActivity = this.analyzeRecentActivity(allRepos);
 
-    return `DEVELOPER PROFILE:
-Username: ${username}
-Total Public Repositories: ${allRepos.length}
-Primary Languages: ${languages.slice(0, 5).join(', ') || 'Not specified'}
-Total Stars Received: ${totalStars}
-Total Forks: ${totalForks}
+    // Build language counts string
+    const langCounts = {};
+    allRepos.forEach(r => { if (r.language) langCounts[r.language] = (langCounts[r.language] || 0) + 1; });
+    const langSummary = Object.entries(langCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 6)
+      .map(([lang, count]) => `${lang} (${count})`)
+      .join(', ');
+
+    let overview = `DEVELOPER: ${username}
+REPOSITORIES: ${allRepos.length} public
+PRIMARY LANGUAGES: ${langSummary || 'Not specified'}
+Total Stars: ${totalStars} | Total Forks: ${totalForks}
 Recent Activity: ${recentActivity}`;
+
+    // Add activity data if available
+    if (activityData) {
+      overview += `\nCommits (6mo): ~${(activityData.commitsLast30Days || 0) + (activityData.commitsLast90Days || 0)} | Weeks active: ${activityData.weeksWithCommits || 0}/26 | Last commit: ${activityData.daysSinceLastCommit ?? '?'} days ago`;
+    }
+
+    // Add pre-computed scores as context (not determinant)
+    if (scores) {
+      overview += `\n\nPRE-COMPUTED METRICS (for context — form your own assessment from the code):
+- Code Sophistication: ${scores.code_sophistication ?? '?'}/25
+- Engineering Practices: ${scores.engineering_practices ?? '?'}/25
+- Project Maturity: ${scores.project_maturity ?? '?'}/20
+- Contribution Activity: ${scores.contribution_activity ?? '?'}/15
+- Breadth & Depth: ${scores.breadth_and_depth ?? '?'}/15
+- Overall: ${scores.overall_score ?? '?'}/100 (${scores.overall_level ?? '?'})`;
+    }
+
+    return overview;
   }
 
   /**
@@ -94,19 +108,20 @@ Recent Activity: ${recentActivity}`;
    * @returns {string} Repository analysis
    */
   buildRepositoryAnalysis(codeData) {
-    let analysis = 'REPOSITORY ANALYSIS:\n';
+    let analysis = 'REPOSITORY DETAILS:\n';
     
-    codeData.forEach((repo, index) => {
-      const repoInfo = this.summarizeRepository(repo);
-      analysis += `\n${index + 1}. ${repo.repoName}
+    // Show up to 8 repositories (increased from truncated 2)
+    const reposToShow = codeData.slice(0, 8);
+    
+    reposToShow.forEach((repo, index) => {
+      analysis += `\n## ${index + 1}. ${repo.repoName} — ${repo.repoLanguage}
    Description: ${repo.repoDescription || 'No description'}
-   Primary Language: ${repo.repoLanguage}
-   Stars: ${repo.repoStars} | Forks: ${repo.repoForks}
+   Stars: ${repo.repoStars} | Forks: ${repo.repoForks} | Last updated: ${repo.lastUpdated || 'Unknown'}
    Files Analyzed: ${repo.analysis.totalFiles}
-   Languages Used: ${repo.analysis.languages.join(', ')}
+   Languages: ${repo.analysis.languages.join(', ')}
    Frameworks: ${repo.analysis.frameworks.join(', ') || 'None detected'}
-   Patterns Detected: ${repo.analysis.patterns.join(', ') || 'None detected'}
-   Complexity Score: ${repo.analysis.avgComplexity.toFixed(1)}/10`;
+   Patterns: ${repo.analysis.patterns.join(', ') || 'None detected'}
+   Complexity: ${repo.analysis.avgComplexity.toFixed(1)}/10`;
     });
 
     return analysis;
@@ -120,19 +135,23 @@ Recent Activity: ${recentActivity}`;
   buildCodeSamples(codeData) {
     let samples = 'CODE SAMPLES:\n';
     
-    codeData.forEach((repo, repoIndex) => {
+    // Show up to 8 repos
+    const reposToShow = codeData.slice(0, 8);
+    
+    reposToShow.forEach((repo) => {
       samples += `\n--- Repository: ${repo.repoName} ---\n`;
       
-      // Select most relevant files for each repository
+      // Select most relevant files (up to 3 per repo, including test files)
       const relevantFiles = this.selectRelevantFiles(repo.codeSnippets);
       
       relevantFiles.forEach((file, fileIndex) => {
         if (file.content && file.content.trim().length > 0) {
-          samples += `\nFile ${fileIndex + 1}: ${file.path} (${file.language})\n`;
+          const isTest = /test|spec|__tests__/i.test(file.path);
+          samples += `\nFile ${fileIndex + 1}: ${file.path} (${file.language})${isTest ? ' [TEST FILE]' : ''}\n`;
           samples += `Lines: ${file.lineCount} | Complexity: ${file.complexity}/10\n`;
           samples += `Quality Indicators: ${this.formatQualityIndicators(file.codeQuality)}\n`;
           samples += '```\n';
-          samples += this.truncateCode(file.content, 800); // Limit code length
+          samples += this.truncateCode(file.content, 1500); // Increased from 800
           samples += '\n```\n';
         }
       });
@@ -147,21 +166,22 @@ Recent Activity: ${recentActivity}`;
    */
   buildInstructions() {
     return `INSTRUCTIONS:
-Analyze the provided code and repository data. Consider:
-- Overall code quality and architecture
-- Use of best practices and modern features
-- Project complexity and scope
-- Consistency across different repositories
-- Evidence of testing, documentation, and error handling
+Analyze the provided code samples and repository data.
 
-Respond with ONLY valid JSON in this exact format:
-{
-  "grade": "Beginner|Intermediate|Advanced",
-  "reasoning": "2-3 sentence explanation of the grade decision based on specific code observations",
-  "strengths": ["specific strength 1", "specific strength 2", "specific strength 3"],
-  "weaknesses": ["specific weakness 1", "specific weakness 2", "specific weakness 3"],
-  "suggestions": ["actionable suggestion 1", "actionable suggestion 2", "actionable suggestion 3"]
-}`;
+For the RECRUITER perspective, focus on:
+- Specific role fit (e.g., "Mid-level React/Node.js developer", not just "Full-Stack")
+- Observable work patterns and reliability signals
+- Portfolio readiness: would these projects impress in an interview?
+- Honest risks, framed constructively
+
+For the ENGINEER perspective, focus on:
+- Specific design patterns you observe (reference file names)
+- Error handling maturity and testing quality
+- Complexity level: CRUD / Service architecture / Distributed / Algorithm-heavy
+- 2-3 technical interview questions you would ask based on their code
+- Ranked, actionable improvement priorities
+
+Respond with ONLY valid JSON matching the response format specified in the system prompt.`;
   }
 
   /**
@@ -327,21 +347,21 @@ Respond with ONLY valid JSON in this exact format:
    * @param {Array} allRepos - All repositories
    * @returns {string} Truncated prompt
    */
-  buildTruncatedPrompt(username, codeData, allRepos) {
-    // Use only top 2 repositories and limit code samples
-    const limitedCodeData = codeData.slice(0, 2);
+  buildTruncatedPrompt(username, codeData, allRepos, scores, activityData) {
+    // Use top 4 repositories and limit code samples
+    const limitedCodeData = codeData.slice(0, 4);
     
     // Reduce code sample sizes
     limitedCodeData.forEach(repo => {
       repo.codeSnippets = repo.codeSnippets.slice(0, 2);
       repo.codeSnippets.forEach(file => {
-        file.content = this.truncateCode(file.content, 400);
+        file.content = this.truncateCode(file.content, 800);
       });
     });
 
     const sections = [
       this.buildHeader(),
-      this.buildDeveloperOverview(username, allRepos),
+      this.buildDeveloperOverview(username, allRepos, scores, activityData),
       this.buildRepositoryAnalysis(limitedCodeData),
       this.buildCodeSamples(limitedCodeData),
       this.buildInstructions()

@@ -1,419 +1,385 @@
 /**
  * Service for calculating developer scores based on GitHub data
- * Implements scoring logic from BACKEND_SPEC.md
+ * Redesigned: 5-category, 100-point gradient scoring system
+ *
+ * Categories:
+ *   Code Sophistication  (25)  – actual code complexity, language features, abstraction
+ *   Engineering Practices (25)  – testing, CI/CD, documentation, config, reviews
+ *   Project Maturity      (20)  – completeness, README, config, community readiness
+ *   Contribution Activity (15)  – recency, consistency, commit quality, volume
+ *   Breadth & Depth       (15)  – language diversity, domain coverage, stack depth
  */
 class ScoringService {
   /**
-   * Calculate all scores for a developer
+   * Calculate all scores for a developer (new 100-point system)
    * @param {Object} profile - User profile data
-   * @param {Array} repos - Repositories array
-   * @param {Array} repoDetails - Detailed repository analysis
-   * @param {Object} activityData - Activity metrics
+   * @param {Array}  repos - Filtered quality repositories
+   * @param {Array}  repoDetails - Detailed analysis from codeExtractor (ratio-based)
+   * @param {Object} activityData - Commit activity metrics
    * @returns {Object} Complete scores object
    */
   calculateScores(profile, repos, repoDetails, activityData) {
     const scores = {
-      code_quality: this.calculateCodeQuality(repoDetails),
-      project_diversity: this.calculateProjectDiversity(repoDetails),
-      activity: this.calculateActivity(activityData),
-      architecture: this.calculateArchitecture(repoDetails),
-      repo_quality: this.calculateRepoQuality(repos, repoDetails),
-      professionalism: this.calculateProfessionalism(profile, repoDetails)
+      code_sophistication: this.calculateCodeSophistication(repoDetails),
+      engineering_practices: this.calculateEngineeringPractices(repoDetails),
+      project_maturity: this.calculateProjectMaturity(repoDetails),
+      contribution_activity: this.calculateContributionActivity(activityData),
+      breadth_and_depth: this.calculateBreadthAndDepth(repos, repoDetails)
     };
 
-    const overall_score = Object.values(scores).reduce((sum, score) => sum + score, 0);
+    const overall_score = Math.round(
+      scores.code_sophistication +
+      scores.engineering_practices +
+      scores.project_maturity +
+      scores.contribution_activity +
+      scores.breadth_and_depth
+    );
+
     const overall_level = this.classifyLevel(overall_score);
-    
+
     return {
       overall_level,
-      overall_score: Math.round(overall_score),
+      overall_score,
       job_readiness_score: this.calculateJobReadiness(scores),
       tech_depth_score: this.calculateTechDepth(scores),
-      ...scores
+      hiring_readiness: this.getHiringReadiness(overall_score),
+      ...scores,
+      // Provide category_scores in the shape the leaderboard / frontend expects
+      category_scores: {
+        code_sophistication: round2(scores.code_sophistication),
+        engineering_practices: round2(scores.engineering_practices),
+        project_maturity: round2(scores.project_maturity),
+        contribution_activity: round2(scores.contribution_activity),
+        breadth_and_depth: round2(scores.breadth_and_depth)
+      }
     };
   }
 
-  /**
-   * Calculate Code Quality score (0-20)
-   * Based on: tests, structure, commits, style, documentation, code smells
-   */
-  calculateCodeQuality(repoDetails) {
-    let score = 0;
-    let repoCount = 0;
+  // ──────────────────────────────────────────────
+  // 1. Code Sophistication (0-25)
+  // ──────────────────────────────────────────────
+  calculateCodeSophistication(repoDetails) {
+    if (repoDetails.length === 0) return 0;
 
+    let total = 0;
     for (const repo of repoDetails) {
       let repoScore = 0;
 
-      // Tests exist (+4)
-      if (repo.hasTests) {
-        repoScore += 4;
-      }
+      // Abstraction / complexity level (0-7)
+      // avgComplexity is 0-10 from codeExtractor; scale to 0-7
+      repoScore += Math.min(7, (repo.avgComplexity || 0) * 0.7);
 
-      // Readable folder structure (+4)
-      if (repo.hasGoodStructure) {
-        repoScore += 4;
-      }
+      // Error handling density (0-5)
+      // 0% → 0, 100% → 5
+      repoScore += (repo.errorHandlingDensity || 0) * 5;
 
-      // Meaningful commits (+3)
-      if (repo.meaningfulCommitsRatio > 0.4) {
-        repoScore += 3;
-      }
+      // Modern language features (0-5)
+      repoScore += (repo.modernSyntaxRatio || 0) * 5;
 
-      // Clean code style (+3)
-      if (repo.hasConsistentStyle) {
-        repoScore += 3;
-      }
+      // Type safety (0-4)
+      repoScore += (repo.typeSafetyRatio || 0) * 4;
 
-      // Documentation exists (+3)
-      if (repo.hasDocumentation) {
-        repoScore += 3;
-      }
+      // DRY / modularity (0-4)
+      // Ideal avg file size is 50-300 lines → score 4; <20 or >500 → lower
+      const avg = repo.avgFileSize || 0;
+      let modScore = 0;
+      if (avg >= 50 && avg <= 300) modScore = 4;
+      else if (avg >= 30 && avg <= 500) modScore = 3;
+      else if (avg >= 15 && avg <= 700) modScore = 2;
+      else if (avg > 0) modScore = 1;
+      repoScore += modScore;
 
-      // Low code smells (+3)
-      if (!repo.hasCodeSmells) {
-        repoScore += 3;
-      }
-
-      score += repoScore;
-      repoCount++;
+      total += Math.min(25, repoScore);
     }
 
-    // Average across analyzed repos
-    const avgScore = repoCount > 0 ? score / repoCount : 0;
-    return Math.min(20, Math.round(avgScore));
+    return round2(total / repoDetails.length);
   }
 
-  /**
-   * Calculate Project Diversity score (0-20)
-   * Based on: tech stack breadth (10) + project type variation (10)
-   */
-  calculateProjectDiversity(repoDetails) {
-    let techStackScore = 0;
-    let projectTypeScore = 0;
+  // ──────────────────────────────────────────────
+  // 2. Engineering Practices (0-25)
+  // ──────────────────────────────────────────────
+  calculateEngineeringPractices(repoDetails) {
+    if (repoDetails.length === 0) return 0;
 
-    // Collect all technologies
-    const technologies = {
-      frontend: new Set(),
-      backend: new Set(),
-      database: new Set(),
-      api: new Set(),
-      devops: new Set()
-    };
-
-    const projectTypes = {
-      webApp: false,
-      api: false,
-      cli: false,
-      library: false,
-      mobile: false
-    };
-
-    // Analyze each repo
-    for (const repo of repoDetails) {
-      // Tech stack detection
-      if (repo.frameworks) {
-        repo.frameworks.forEach(fw => {
-          const fwLower = fw.toLowerCase();
-          // Frontend
-          if (['react', 'vue', 'angular', 'svelte', 'next'].some(t => fwLower.includes(t))) {
-            technologies.frontend.add(fw);
-          }
-          // Backend
-          if (['node', 'express', 'django', 'flask', 'spring', 'rails', 'laravel'].some(t => fwLower.includes(t))) {
-            technologies.backend.add(fw);
-          }
-          // Database
-          if (['sql', 'mongo', 'postgres', 'mysql', 'redis', 'firebase'].some(t => fwLower.includes(t))) {
-            technologies.database.add(fw);
-          }
-          // API
-          if (['rest', 'graphql', 'api', 'grpc'].some(t => fwLower.includes(t))) {
-            technologies.api.add(fw);
-          }
-          // DevOps
-          if (['docker', 'kubernetes', 'k8s', 'aws', 'azure', 'gcp'].some(t => fwLower.includes(t))) {
-            technologies.devops.add(fw);
-          }
-        });
-      }
-
-      // Project type detection
-      const name = repo.name.toLowerCase();
-      const desc = (repo.description || '').toLowerCase();
-      
-      if (desc.includes('web') || desc.includes('app') || ['react', 'vue', 'angular'].some(t => desc.includes(t))) {
-        projectTypes.webApp = true;
-      }
-      if (desc.includes('api') || desc.includes('rest') || desc.includes('graphql')) {
-        projectTypes.api = true;
-      }
-      if (desc.includes('cli') || desc.includes('command') || desc.includes('tool')) {
-        projectTypes.cli = true;
-      }
-      if (desc.includes('library') || desc.includes('package') || desc.includes('sdk')) {
-        projectTypes.library = true;
-      }
-      if (desc.includes('mobile') || desc.includes('ios') || desc.includes('android')) {
-        projectTypes.mobile = true;
-      }
-    }
-
-    // Calculate tech stack score (0-10)
-    if (technologies.frontend.size > 0) techStackScore += 2;
-    if (technologies.backend.size > 0) techStackScore += 2;
-    if (technologies.database.size > 0) techStackScore += 2;
-    if (technologies.api.size > 0) techStackScore += 2;
-    if (technologies.devops.size > 0) techStackScore += 2;
-
-    // Calculate project type score (0-10)
-    if (projectTypes.webApp) projectTypeScore += 2;
-    if (projectTypes.api) projectTypeScore += 2;
-    if (projectTypes.cli) projectTypeScore += 2;
-    if (projectTypes.library) projectTypeScore += 2;
-    if (projectTypes.mobile) projectTypeScore += 2;
-
-    return techStackScore + projectTypeScore;
-  }
-
-  /**
-   * Calculate Activity score (0-20)
-   * Based on: recent activity (10) + consistency (10)
-   */
-  calculateActivity(activityData) {
-    let score = 0;
-
-    // Recent activity (0-10)
-    if (activityData.commitsLast30Days > 10) {
-      score += 10;
-    } else if (activityData.commitsLast90Days > 20) {
-      score += 5;
-    }
-
-    // Consistency (0-10)
-    const weeksWithCommits = activityData.weeksWithCommits || 0;
-    if (weeksWithCommits > 20) {  // ~80% of weeks in 6 months
-      score += 10;
-    } else if (weeksWithCommits > 13) {  // ~50% of weeks
-      score += 5;
-    } else if (weeksWithCommits > 6) {  // ~25% of weeks
-      score += 2;
-    }
-
-    return Math.min(20, score);
-  }
-
-  /**
-   * Calculate Architecture score (0-20)
-   * Based on: MVC pattern, modular structure, separation of concerns, reusable components, services
-   */
-  calculateArchitecture(repoDetails) {
-    let score = 0;
-    let repoCount = 0;
-
+    let total = 0;
     for (const repo of repoDetails) {
       let repoScore = 0;
 
-      // MVC/MVVM pattern (+5)
-      if (repo.hasMVCPattern) {
-        repoScore += 5;
-      }
+      // Test coverage breadth (0-8)
+      // testFileRatio scaled + bonus for test file count
+      const testBase = Math.min(1, (repo.testFileRatio || 0) * 3); // boost low ratios
+      const testCountBonus = Math.min(1, (repo.testFileCount || 0) / 10); // up to 10 test files
+      repoScore += (testBase * 0.6 + testCountBonus * 0.4) * 8;
 
-      // Modular structure (+5)
-      if (repo.hasModularStructure) {
-        repoScore += 5;
-      }
+      // CI/CD maturity (0-5)
+      // cicdMaturity is 0-3 from codeExtractor
+      const cicdMap = { 0: 0, 1: 2, 2: 3.5, 3: 5 };
+      repoScore += cicdMap[repo.cicdMaturity] || 0;
 
-      // Separation of concerns (+4)
-      if (repo.hasSeparationOfConcerns) {
-        repoScore += 4;
-      }
+      // Documentation quality (0-5)
+      // Blend of documentation density + comment density
+      const docScore = ((repo.documentationDensity || 0) * 0.6 + (repo.commentDensity || 0) * 0.4) * 5;
+      repoScore += Math.min(5, docScore);
 
-      // Reusable components (+3)
-      if (repo.hasReusableComponents) {
-        repoScore += 3;
-      }
+      // Dependency management (0-3)
+      let depScore = 0;
+      if (repo.hasLockfile) depScore += 1;
+      if (repo.hasConfig) depScore += 1;
+      if (repo.hasBuildScript) depScore += 1;
+      repoScore += depScore;
 
-      // Services/Utils structure (+3)
-      if (repo.hasServicesLayer) {
-        repoScore += 3;
-      }
+      // Code review / branching signals (0-4)
+      // Score lint config + env config + gitignore as proxy for engineering culture
+      let reviewScore = 0;
+      if (repo.hasLintConfig) reviewScore += 1.5;
+      if (repo.hasEnvConfig) reviewScore += 1.5;
+      if (repo.hasGitignore) reviewScore += 1;
+      repoScore += Math.min(4, reviewScore);
 
-      score += repoScore;
-      repoCount++;
+      total += Math.min(25, repoScore);
     }
 
-    const avgScore = repoCount > 0 ? score / repoCount : 0;
-    return Math.min(20, Math.round(avgScore));
+    return round2(total / repoDetails.length);
   }
 
-  /**
-   * Calculate Repository Quality score (0-20)
-   * Based on: complete project, CI/CD, well-structured, community engagement
-   */
-  calculateRepoQuality(repos, repoDetails) {
-    let score = 0;
-    let repoCount = 0;
+  // ──────────────────────────────────────────────
+  // 3. Project Maturity (0-20)
+  // ──────────────────────────────────────────────
+  calculateProjectMaturity(repoDetails) {
+    if (repoDetails.length === 0) return 0;
 
-    for (let i = 0; i < repoDetails.length; i++) {
-      const repo = repos[i];
-      const details = repoDetails[i];
+    let total = 0;
+    for (const repo of repoDetails) {
       let repoScore = 0;
 
-      // Complete project (+5)
-      if (details.isComplete) {
-        repoScore += 5;
-      }
+      // Completeness (0-5) — gradient based on multiple signals
+      let completeness = 0;
+      if (repo.hasEntryPoint) completeness += 1;
+      if (repo.hasConfig) completeness += 1;
+      if (repo.sourceFileCount > 10) completeness += 1;
+      else if (repo.sourceFileCount > 5) completeness += 0.5;
+      if (repo.hasBuildScript) completeness += 1;
+      if (repo.totalFileCount > 15) completeness += 1;
+      else if (repo.totalFileCount > 8) completeness += 0.5;
+      repoScore += Math.min(5, completeness);
 
-      // CI/CD pipelines (+5)
-      if (details.hasCICD) {
-        repoScore += 5;
-      }
+      // README quality (0-5)
+      repoScore += Math.min(5, repo.readmeQuality || 0);
 
-      // Well-structured repo (+5)
-      if (details.isWellStructured) {
-        repoScore += 5;
-      }
+      // Configuration (0-4)
+      let configScore = 0;
+      if (repo.hasEnvConfig) configScore += 1.5;
+      if (repo.hasLintConfig) configScore += 1.5;
+      if (repo.hasGitignore) configScore += 1;
+      repoScore += Math.min(4, configScore);
 
-      // Community engagement (+5)
-      const stars = repo.stargazers_count || 0;
-      const forks = repo.forks_count || 0;
-      if (stars > 5 || forks > 2) {
-        repoScore += 5;
-      }
+      // Community readiness (0-3)
+      let communityScore = 0;
+      if (repo.hasLicense) communityScore += 1;
+      if (repo.hasContributing) communityScore += 1;
+      if (repo.hasChangelog) communityScore += 1;
+      repoScore += communityScore;
 
-      score += repoScore;
-      repoCount++;
+      // Release maturity (0-3)
+      // Using folder depth and structure maturity as proxy
+      let releaseScore = 0;
+      if (repo.uniqueFolderCount >= 5) releaseScore += 1;
+      if (repo.maxFolderDepth >= 3) releaseScore += 1;
+      if (repo.frameworks.length >= 2) releaseScore += 1;
+      repoScore += Math.min(3, releaseScore);
+
+      total += Math.min(20, repoScore);
     }
 
-    const avgScore = repoCount > 0 ? score / repoCount : 0;
-    return Math.min(20, Math.round(avgScore));
+    return round2(total / repoDetails.length);
   }
 
-  /**
-   * Calculate Professionalism score (0-10)
-   * Based on: profile completeness, README quality, community engagement, documentation
-   */
-  calculateProfessionalism(profile, repoDetails) {
+  // ──────────────────────────────────────────────
+  // 4. Contribution Activity (0-15)
+  // ──────────────────────────────────────────────
+  calculateContributionActivity(activityData) {
     let score = 0;
 
-    // Profile completeness (+3)
-    let profileScore = 0;
-    if (profile.name) profileScore += 1;
-    if (profile.bio) profileScore += 1;
-    if (profile.location) profileScore += 0.5;
-    if (profile.avatar) profileScore += 0.5;
-    score += Math.min(3, profileScore);
+    // Recency — smooth decay (0-5)
+    const daysSinceLastCommit = activityData.daysSinceLastCommit ?? 365;
+    if (daysSinceLastCommit <= 7) score += 5;
+    else if (daysSinceLastCommit <= 14) score += 4.5;
+    else if (daysSinceLastCommit <= 30) score += 4;
+    else if (daysSinceLastCommit <= 60) score += 3;
+    else if (daysSinceLastCommit <= 90) score += 2;
+    else if (daysSinceLastCommit <= 180) score += 1;
+    // >180 days = 0
 
-    // README quality (+3)
-    const reposWithGoodREADME = repoDetails.filter(r => r.hasGoodREADME).length;
-    const readmeScore = (reposWithGoodREADME / repoDetails.length) * 3;
-    score += readmeScore;
+    // Consistency — weeks active / 26 (0-5)
+    const weeksActive = activityData.weeksWithCommits || 0;
+    const consistencyRatio = weeksActive / 26;
+    if (consistencyRatio > 0.7) score += 5;
+    else if (consistencyRatio > 0.5) score += 4;
+    else if (consistencyRatio > 0.3) score += 3;
+    else if (consistencyRatio > 0.15) score += 1.5;
+    else if (consistencyRatio > 0) score += 0.5;
 
-    // Community engagement (+2)
-    if (profile.followers > 10 || profile.following > 5) {
-      score += 2;
-    } else if (profile.followers > 5) {
-      score += 1;
-    }
+    // Commit message quality (0-3)
+    const msgQuality = activityData.commitMessageQuality ?? 0; // 0-1 ratio from githubService
+    score += msgQuality * 3;
 
-    // Documentation clarity (+2)
-    const reposWithDocs = repoDetails.filter(r => r.hasDocumentation).length;
-    const docsScore = (reposWithDocs / repoDetails.length) * 2;
-    score += docsScore;
+    // Volume — normalized, least weight (0-2)
+    const totalCommits = (activityData.commitsLast30Days || 0) + (activityData.commitsLast90Days || 0);
+    if (totalCommits > 100) score += 2;
+    else if (totalCommits > 50) score += 1.5;
+    else if (totalCommits > 20) score += 1;
+    else if (totalCommits > 5) score += 0.5;
 
-    return Math.min(10, Math.round(score));
+    return round2(Math.min(15, score));
   }
 
-  /**
-   * Classify skill level based on overall score
-   * @param {number} score - Overall score (0-110)
-   * @returns {string} Skill level
-   */
+  // ──────────────────────────────────────────────
+  // 5. Breadth & Depth (0-15)
+  // ──────────────────────────────────────────────
+  calculateBreadthAndDepth(repos, repoDetails) {
+    let score = 0;
+
+    // Language diversity — diminishing returns (0-6)
+    const languages = new Set();
+    repoDetails.forEach(r => (r.languages || []).forEach(l => languages.add(l)));
+    repos.forEach(r => { if (r.language) languages.add(r.language); });
+    const langCount = languages.size;
+    if (langCount >= 5) score += 6;
+    else if (langCount === 4) score += 5;
+    else if (langCount === 3) score += 4;
+    else if (langCount === 2) score += 2;
+    else if (langCount === 1) score += 1;
+
+    // Domain coverage (0-5)
+    // Detect domains from repo names, descriptions, frameworks
+    const domains = new Set();
+    for (const repo of repoDetails) {
+      const nameDesc = `${repo.name || ''} ${repo.description || ''} ${(repo.frameworks || []).join(' ')}`.toLowerCase();
+      if (/react|vue|angular|svelte|next|frontend|tailwind|css|html|ui|component/.test(nameDesc)) domains.add('frontend');
+      if (/express|django|flask|fastapi|spring|rails|api|server|backend|graphql|rest/.test(nameDesc)) domains.add('backend');
+      if (/cli|command|terminal|argv|script/.test(nameDesc)) domains.add('cli');
+      if (/library|package|sdk|npm|pip|gem|crate/.test(nameDesc)) domains.add('library');
+      if (/mobile|ios|android|react.native|flutter|swift|kotlin/.test(nameDesc)) domains.add('mobile');
+      if (/ml|machine.learning|tensorflow|pytorch|pandas|numpy|data|jupyter|notebook/.test(nameDesc)) domains.add('data-ml');
+      if (/docker|kubernetes|k8s|ci.cd|deploy|terraform|ansible|devops|infrast/.test(nameDesc)) domains.add('devops');
+    }
+    score += Math.min(5, domains.size * 1.25);
+
+    // Stack depth (0-4)
+    let stackScore = 0;
+    if (domains.has('frontend') && domains.has('backend')) stackScore += 2;
+    else if (domains.has('frontend') || domains.has('backend')) stackScore += 1;
+    const allFrameworks = new Set();
+    repoDetails.forEach(r => (r.frameworks || []).forEach(f => allFrameworks.add(f.toLowerCase())));
+    if (['mongo', 'mongoose', 'sql', 'postgres', 'mysql', 'redis', 'firebase', 'prisma', 'sequelize', 'typeorm']
+        .some(db => [...allFrameworks].some(f => f.includes(db)))) {
+      stackScore += 1;
+    }
+    if (domains.has('devops')) stackScore += 1;
+    score += Math.min(4, stackScore);
+
+    return round2(Math.min(15, score));
+  }
+
+  // ──────────────────────────────────────────────
+  // Level classification (new 5-level, 0-100)
+  // ──────────────────────────────────────────────
   classifyLevel(score) {
-    if (score >= 96) return 'Expert';
-    if (score >= 76) return 'Senior';
-    if (score >= 41) return 'Intermediate';
-    return 'Beginner';
+    if (score >= 85) return 'Expert';
+    if (score >= 70) return 'Senior';
+    if (score >= 50) return 'Mid-Level';
+    if (score >= 30) return 'Junior';
+    return 'Entry';
   }
 
-  /**
-   * Calculate job readiness score (0-100)
-   * Weighted average focusing on practical skills
-   */
+  // ──────────────────────────────────────────────
+  // Hiring readiness (displayed to recruiters)
+  // ──────────────────────────────────────────────
+  getHiringReadiness(overallScore) {
+    if (overallScore >= 80) return 'Strong Hire';
+    if (overallScore >= 65) return 'Hire';
+    if (overallScore >= 45) return 'Consider';
+    return 'Develop';
+  }
+
+  /** @deprecated Use getHiringReadiness instead */
+  getHiringRecommendation(overallScore) {
+    return this.getHiringReadiness(overallScore);
+  }
+
+  // ──────────────────────────────────────────────
+  // Derived convenience scores
+  // ──────────────────────────────────────────────
   calculateJobReadiness(scores) {
     const weights = {
-      code_quality: 0.25,
-      project_diversity: 0.20,
-      activity: 0.15,
-      architecture: 0.20,
-      repo_quality: 0.15,
-      professionalism: 0.05
+      code_sophistication: 0.25,
+      engineering_practices: 0.25,
+      project_maturity: 0.20,
+      contribution_activity: 0.15,
+      breadth_and_depth: 0.15
+    };
+    const maxes = {
+      code_sophistication: 25,
+      engineering_practices: 25,
+      project_maturity: 20,
+      contribution_activity: 15,
+      breadth_and_depth: 15
     };
 
-    let weightedSum = 0;
-    let maxWeightedSum = 0;
-
-    Object.keys(weights).forEach(key => {
-      const maxScore = key === 'professionalism' ? 10 : 20;
-      weightedSum += (scores[key] / maxScore) * weights[key];
-      maxWeightedSum += weights[key];
-    });
-
-    return Math.round((weightedSum / maxWeightedSum) * 100);
+    let weighted = 0;
+    for (const [key, weight] of Object.entries(weights)) {
+      weighted += (scores[key] / maxes[key]) * weight;
+    }
+    return Math.round(weighted * 100);
   }
 
-  /**
-   * Calculate technical depth score (0-100)
-   * Focuses on architecture and code quality
-   */
   calculateTechDepth(scores) {
     const weights = {
-      architecture: 0.35,
-      code_quality: 0.35,
-      project_diversity: 0.30
+      code_sophistication: 0.40,
+      engineering_practices: 0.35,
+      breadth_and_depth: 0.25
+    };
+    const maxes = {
+      code_sophistication: 25,
+      engineering_practices: 25,
+      breadth_and_depth: 15
     };
 
-    let weightedSum = 0;
-    let maxWeightedSum = 0;
-
-    Object.keys(weights).forEach(key => {
-      const maxScore = 20;
-      weightedSum += (scores[key] / maxScore) * weights[key];
-      maxWeightedSum += weights[key];
-    });
-
-    return Math.round((weightedSum / maxWeightedSum) * 100);
+    let weighted = 0;
+    for (const [key, weight] of Object.entries(weights)) {
+      weighted += (scores[key] / maxes[key]) * weight;
+    }
+    return Math.round(weighted * 100);
   }
 
   /**
-   * Generate hiring recommendation based on overall score
-   * @param {number} overallScore - Overall score (0-110)
-   * @returns {string} Hiring recommendation
-   */
-  getHiringRecommendation(overallScore) {
-    if (overallScore >= 85) return 'Strong Yes';
-    if (overallScore >= 70) return 'Yes';
-    if (overallScore >= 50) return 'Maybe';
-    return 'No';
-  }
-
-  /**
-   * Get project maturity rating
+   * Get project maturity rating label
    * @param {Array} repoDetails - Repository details
    * @returns {string} Maturity rating
    */
   getProjectMaturityRating(repoDetails) {
-    const completeRepos = repoDetails.filter(r => r.isComplete).length;
-    const cicdRepos = repoDetails.filter(r => r.hasCICD).length;
-    const wellStructured = repoDetails.filter(r => r.isWellStructured).length;
+    if (repoDetails.length === 0) return 'Low';
 
-    const score = (completeRepos + cicdRepos + wellStructured) / (repoDetails.length * 3);
+    let sum = 0;
+    for (const r of repoDetails) {
+      let s = 0;
+      if (r.isComplete || (r.hasEntryPoint && r.hasConfig)) s++;
+      if (r.cicdMaturity > 0) s++;
+      if (r.uniqueFolderCount >= 3 || r.isWellStructured) s++;
+      sum += s;
+    }
+    const ratio = sum / (repoDetails.length * 3);
 
-    if (score >= 0.75) return 'Excellent';
-    if (score >= 0.5) return 'Good';
-    if (score >= 0.25) return 'Moderate';
+    if (ratio >= 0.75) return 'Excellent';
+    if (ratio >= 0.5) return 'Good';
+    if (ratio >= 0.25) return 'Moderate';
     return 'Low';
   }
+}
+
+/** Round to 2 decimal places */
+function round2(n) {
+  return Math.round(n * 100) / 100;
 }
 
 module.exports = new ScoringService();
