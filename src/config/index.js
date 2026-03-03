@@ -4,7 +4,7 @@
  * Import this instead of using process.env.* directly.
  */
 
-require('dotenv').config();
+// dotenv is already loaded by server.js — no need to call it again here
 
 // ─── Helper ─────────────────────────────────────────────────────
 function required(name) {

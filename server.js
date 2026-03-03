@@ -1,4 +1,17 @@
-require('dotenv').config();
+const path = require('path');
+const dotenv = require('dotenv');
+
+// Load environment-specific .env file
+const envFile = process.env.NODE_ENV === 'production'
+  ? '.env.production'
+  : '.env.development';
+const envPath = path.resolve(__dirname, envFile);
+const fallbackPath = path.resolve(__dirname, '.env');
+
+const result = dotenv.config({ path: envPath });
+if (result.error) {
+  dotenv.config({ path: fallbackPath });
+}
 
 const http = require('http');
 const mongoose = require('mongoose');
