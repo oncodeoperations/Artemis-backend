@@ -1,6 +1,8 @@
+const crypto = require('crypto');
 const Assessment = require('../models/Assessment');
 const AssessmentInvitation = require('../models/AssessmentInvitation');
 const AssessmentSession = require('../models/AssessmentSession');
+const Question = require('../models/Question');
 const User = require('../models/User');
 const assessmentEngine = require('../services/assessmentEngine');
 const emailService = require('../services/emailService');
@@ -13,12 +15,20 @@ const logger = require('../utils/logger');
 
 /**
  * POST /api/assessments — create a new assessment template
+ * Supports both 'ai_chat' (legacy) and 'coding' (HackerRank-style) types.
  */
 exports.createAssessment = async (req, res) => {
   try {
-    const { title, description, profession, role, skills, difficulty, questionCount, timeLimitMinutes } = req.body;
+    const {
+      title, description, profession, role, skills, difficulty,
+      questionCount, timeLimitMinutes,
+      assessmentType, questions, allowedLanguages, isPublic,
+    } = req.body;
 
-    const assessment = await Assessment.create({
+    // Generate a unique invite code for shareable links
+    const inviteCode = crypto.randomBytes(6).toString('hex');
+
+    const assessmentData = {
       title,
       description,
       profession,
@@ -27,10 +37,41 @@ exports.createAssessment = async (req, res) => {
       difficulty,
       questionCount,
       timeLimitMinutes,
+      assessmentType: assessmentType || 'ai_chat',
+      allowedLanguages: allowedLanguages || ['javascript', 'python', 'java', 'cpp'],
+      isPublic: isPublic || false,
+      inviteCode,
+      createdBy: req.user._id,
+    };
+
+    // For coding assessments, attach question IDs and auto-set questionCount
+    if (assessmentType === 'coding' && Array.isArray(questions) && questions.length > 0) {
+      // Validate that all question IDs exist
+      const validQuestions = await Question.find({
+        _id: { $in: questions },
+        isActive: true,
+      }).select('_id');
+
+      if (validQuestions.length !== questions.length) {
+        return res.status(400).json({ message: 'One or more question IDs are invalid or inactive' });
+      }
+
+      assessmentData.questions = questions;
+      assessmentData.questionCount = questions.length;
+    }
+
+    const assessment = await Assessment.create(assessmentData);
+
+    // Populate questions for the response
+    if (assessment.assessmentType === 'coding' && assessment.questions.length > 0) {
+      await assessment.populate('questions', 'title difficulty points type category tags timeLimitSeconds');
+    }
+
+    logger.info('Assessment created', {
+      assessmentId: assessment._id,
+      type: assessment.assessmentType,
       createdBy: req.user._id,
     });
-
-    logger.info('Assessment created', { assessmentId: assessment._id, createdBy: req.user._id });
     res.status(201).json({ assessment });
   } catch (error) {
     logger.error('Error creating assessment', { error: error.message });
@@ -63,14 +104,19 @@ exports.getAssessments = async (req, res) => {
 };
 
 /**
- * GET /api/assessments/:id — single assessment detail
+ * GET /api/assessments/:id — single assessment detail (with populated questions for coding type)
  */
 exports.getAssessment = async (req, res) => {
   try {
-    const assessment = await Assessment.findOne({
+    let query = Assessment.findOne({
       _id: req.params.id,
       createdBy: req.user._id,
-    }).lean();
+    });
+
+    // Populate questions for coding assessments
+    query = query.populate('questions', 'title description difficulty points type category tags timeLimitSeconds allowedLanguages testCases starterCode constraints examples');
+
+    const assessment = await query.lean();
 
     if (!assessment) {
       return res.status(404).json({ message: 'Assessment not found' });
@@ -80,6 +126,167 @@ exports.getAssessment = async (req, res) => {
   } catch (error) {
     logger.error('Error fetching assessment', { error: error.message });
     res.status(500).json({ message: 'Failed to fetch assessment', error: error.message });
+  }
+};
+
+/**
+ * GET /api/assessments/code/:inviteCode — get assessment by shareable invite code
+ * Public access (no auth). Returns assessment info for the landing page.
+ */
+exports.getAssessmentByInviteCode = async (req, res) => {
+  try {
+    const assessment = await Assessment.findOne({
+      inviteCode: req.params.inviteCode,
+      isActive: true,
+    })
+      .select('title description profession role difficulty questionCount timeLimitMinutes assessmentType allowedLanguages skills createdBy')
+      .populate('createdBy', 'firstName lastName companyName')
+      .lean();
+
+    if (!assessment) {
+      return res.status(404).json({ message: 'Assessment not found' });
+    }
+
+    res.json({ assessment });
+  } catch (error) {
+    logger.error('Error fetching assessment by invite code', { error: error.message });
+    res.status(500).json({ message: 'Failed to fetch assessment', error: error.message });
+  }
+};
+
+/**
+ * POST /api/assessments/:id/questions — add questions to a coding assessment
+ */
+exports.addQuestions = async (req, res) => {
+  try {
+    const { questionIds } = req.body;
+    if (!Array.isArray(questionIds) || questionIds.length === 0) {
+      return res.status(400).json({ message: 'questionIds array is required' });
+    }
+
+    const assessment = await Assessment.findOne({
+      _id: req.params.id,
+      createdBy: req.user._id,
+      assessmentType: 'coding',
+    });
+
+    if (!assessment) {
+      return res.status(404).json({ message: 'Coding assessment not found' });
+    }
+
+    // Validate question IDs
+    const validQuestions = await Question.find({
+      _id: { $in: questionIds },
+      isActive: true,
+    }).select('_id');
+
+    const validIds = validQuestions.map((q) => q._id.toString());
+    const newIds = questionIds.filter(
+      (id) => validIds.includes(id) && !assessment.questions.map(String).includes(id)
+    );
+
+    assessment.questions.push(...newIds);
+    assessment.questionCount = assessment.questions.length;
+    await assessment.save();
+
+    await assessment.populate('questions', 'title difficulty points type category tags timeLimitSeconds');
+
+    res.json({ assessment });
+  } catch (error) {
+    logger.error('Error adding questions', { error: error.message });
+    res.status(500).json({ message: 'Failed to add questions', error: error.message });
+  }
+};
+
+/**
+ * DELETE /api/assessments/:id/questions/:questionId — remove a question from assessment
+ */
+exports.removeQuestion = async (req, res) => {
+  try {
+    const assessment = await Assessment.findOne({
+      _id: req.params.id,
+      createdBy: req.user._id,
+      assessmentType: 'coding',
+    });
+
+    if (!assessment) {
+      return res.status(404).json({ message: 'Coding assessment not found' });
+    }
+
+    assessment.questions = assessment.questions.filter(
+      (qId) => qId.toString() !== req.params.questionId
+    );
+    assessment.questionCount = assessment.questions.length;
+    await assessment.save();
+
+    await assessment.populate('questions', 'title difficulty points type category tags timeLimitSeconds');
+
+    res.json({ assessment });
+  } catch (error) {
+    logger.error('Error removing question', { error: error.message });
+    res.status(500).json({ message: 'Failed to remove question', error: error.message });
+  }
+};
+
+/**
+ * PUT /api/assessments/:id/questions/reorder — reorder questions
+ */
+exports.reorderQuestions = async (req, res) => {
+  try {
+    const { questionIds } = req.body;
+    if (!Array.isArray(questionIds)) {
+      return res.status(400).json({ message: 'questionIds array is required' });
+    }
+
+    const assessment = await Assessment.findOne({
+      _id: req.params.id,
+      createdBy: req.user._id,
+      assessmentType: 'coding',
+    });
+
+    if (!assessment) {
+      return res.status(404).json({ message: 'Coding assessment not found' });
+    }
+
+    // Ensure the provided IDs match the existing questions
+    const currentIds = assessment.questions.map(String).sort();
+    const newIds = [...questionIds].sort();
+
+    if (JSON.stringify(currentIds) !== JSON.stringify(newIds)) {
+      return res.status(400).json({ message: 'Question IDs must match existing questions' });
+    }
+
+    assessment.questions = questionIds;
+    await assessment.save();
+
+    await assessment.populate('questions', 'title difficulty points type category tags timeLimitSeconds');
+
+    res.json({ assessment });
+  } catch (error) {
+    logger.error('Error reordering questions', { error: error.message });
+    res.status(500).json({ message: 'Failed to reorder questions', error: error.message });
+  }
+};
+
+/**
+ * POST /api/assessments/:id/regenerate-code — regenerate the invite code
+ */
+exports.regenerateInviteCode = async (req, res) => {
+  try {
+    const assessment = await Assessment.findOneAndUpdate(
+      { _id: req.params.id, createdBy: req.user._id },
+      { $set: { inviteCode: crypto.randomBytes(6).toString('hex') } },
+      { new: true }
+    );
+
+    if (!assessment) {
+      return res.status(404).json({ message: 'Assessment not found' });
+    }
+
+    res.json({ inviteCode: assessment.inviteCode });
+  } catch (error) {
+    logger.error('Error regenerating invite code', { error: error.message });
+    res.status(500).json({ message: 'Failed to regenerate invite code', error: error.message });
   }
 };
 
@@ -321,6 +528,7 @@ exports.declineInvitation = async (req, res) => {
 
 /**
  * POST /api/assessments/sessions/start — begin an assessment session
+ * Supports both AI-chat (generates first question via AI) and coding (loads questions from assessment).
  */
 exports.startSession = async (req, res) => {
   try {
@@ -354,56 +562,104 @@ exports.startSession = async (req, res) => {
       invitation: invitationId,
       freelancer: req.user._id,
       status: 'in_progress',
+    }).populate({
+      path: 'assessment',
+      populate: { path: 'questions', model: 'Question' },
     });
 
     if (existing) {
-      // Resume existing session
+      // Resume existing session — include questions for coding
       return res.json({ session: existing, resumed: true });
     }
 
     const assessment = invitation.assessment;
+    const isCoding = assessment.assessmentType === 'coding';
 
-    // Generate the first question via AI
-    const firstQ = await assessmentEngine.generateFirstQuestion({
-      profession: assessment.profession,
-      role: assessment.role,
-      skills: assessment.skills,
-      difficulty: assessment.difficulty,
-      totalQuestions: assessment.questionCount,
-    });
+    if (isCoding) {
+      // ── Coding session: load questions from assessment ────────
+      const populatedAssessment = await Assessment.findById(assessment._id)
+        .populate('questions', 'title description type difficulty points category tags timeLimitSeconds testCases starterCode constraints examples allowedLanguages');
 
-    // Create the session
-    const session = await AssessmentSession.create({
-      invitation: invitationId,
-      assessment: assessment._id,
-      freelancer: req.user._id,
-      totalQuestions: assessment.questionCount,
-      currentQuestionIndex: 1,
-      messages: [
-        {
-          role: 'ai',
-          content: firstQ.question,
-          questionIndex: 1,
-        },
-      ],
-    });
+      const questions = populatedAssessment.questions || [];
+      if (questions.length === 0) {
+        return res.status(400).json({ message: 'This coding assessment has no questions configured' });
+      }
 
-    // Update invitation status
-    invitation.status = 'accepted';
-    // Link freelancer if not already linked
-    if (!invitation.freelancer) {
-      invitation.freelancer = req.user._id;
+      const session = await AssessmentSession.create({
+        invitation: invitationId,
+        assessment: assessment._id,
+        freelancer: req.user._id,
+        sessionType: 'coding',
+        totalQuestions: questions.length,
+        currentQuestionIndex: 0,
+        messages: [],
+        submissions: [],
+      });
+
+      // Update invitation status
+      invitation.status = 'accepted';
+      if (!invitation.freelancer) invitation.freelancer = req.user._id;
+      await invitation.save();
+
+      logger.info('Coding session started', { sessionId: session._id, freelancer: req.user._id, questionCount: questions.length });
+
+      // Notify employer (non-blocking)
+      notificationService.notifyAssessmentStarted(session, assessment, req.user).catch((err) =>
+        logger.warn('Failed to send assessment started notification', { error: err.message })
+      );
+
+      // Return session + full question data (hide hidden test cases from response)
+      const safeQuestions = questions.map(q => {
+        const obj = q.toObject ? q.toObject() : q;
+        return {
+          ...obj,
+          testCases: (obj.testCases || []).filter(tc => !tc.isHidden),
+        };
+      });
+
+      res.status(201).json({
+        session,
+        questions: safeQuestions,
+        resumed: false,
+      });
+    } else {
+      // ── AI-chat session (legacy flow) ────────────────────────
+      const firstQ = await assessmentEngine.generateFirstQuestion({
+        profession: assessment.profession,
+        role: assessment.role,
+        skills: assessment.skills,
+        difficulty: assessment.difficulty,
+        totalQuestions: assessment.questionCount,
+      });
+
+      const session = await AssessmentSession.create({
+        invitation: invitationId,
+        assessment: assessment._id,
+        freelancer: req.user._id,
+        sessionType: 'ai_chat',
+        totalQuestions: assessment.questionCount,
+        currentQuestionIndex: 1,
+        messages: [
+          {
+            role: 'ai',
+            content: firstQ.question,
+            questionIndex: 1,
+          },
+        ],
+      });
+
+      invitation.status = 'accepted';
+      if (!invitation.freelancer) invitation.freelancer = req.user._id;
+      await invitation.save();
+
+      logger.info('AI-chat session started', { sessionId: session._id, freelancer: req.user._id });
+
+      notificationService.notifyAssessmentStarted(session, assessment, req.user).catch((err) =>
+        logger.warn('Failed to send assessment started notification', { error: err.message })
+      );
+
+      res.status(201).json({ session, resumed: false });
     }
-    await invitation.save();
-
-    logger.info('Assessment session started', { sessionId: session._id, freelancer: req.user._id });
-
-    // Notify employer (non-blocking)
-    notificationService.notifyAssessmentStarted(session, assessment, req.user).catch((err) =>
-      logger.warn('Failed to send assessment started notification', { error: err.message })
-    );
-
-    res.status(201).json({ session, resumed: false });
   } catch (error) {
     logger.error('Error starting session', { error: error.message });
     res.status(500).json({ message: 'Failed to start assessment session', error: error.message });
@@ -540,7 +796,15 @@ exports.sendMessage = async (req, res) => {
 exports.getSession = async (req, res) => {
   try {
     const session = await AssessmentSession.findById(req.params.id)
-      .populate('assessment', 'title profession role skills difficulty questionCount timeLimitMinutes createdBy')
+      .populate({
+        path: 'assessment',
+        select: 'title profession role skills difficulty questionCount timeLimitMinutes createdBy assessmentType allowedLanguages questions',
+        populate: {
+          path: 'questions',
+          model: 'Question',
+          select: 'title description type difficulty points category tags timeLimitSeconds testCases starterCode constraints examples allowedLanguages',
+        },
+      })
       .populate('freelancer', 'firstName lastName email profession professionalRole')
       .lean();
 
@@ -624,3 +888,336 @@ function _extractQuestionScores(messages, lastScore) {
 function _clamp(value, min, max) {
   return Math.min(Math.max(Number(value) || 0, min), max);
 }
+
+// ═══════════════════════════════════════════════════════════════
+//  FINISH CODING SESSION
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * POST /api/assessments/sessions/:id/finish — Complete a coding session.
+ * Calculates total score from all submissions, generates summary, marks complete.
+ */
+exports.finishCodingSession = async (req, res) => {
+  try {
+    const session = await AssessmentSession.findOne({
+      _id: req.params.id,
+      freelancer: req.user._id,
+      status: 'in_progress',
+      sessionType: 'coding',
+    }).populate('assessment');
+
+    if (!session) {
+      return res.status(404).json({ message: 'Active coding session not found' });
+    }
+
+    const assessment = session.assessment;
+    const elapsed = (Date.now() - session.startedAt.getTime()) / 1000;
+
+    // Calculate weighted score from submissions
+    // Load the actual questions to get points/weights
+    const questionIds = session.submissions.map(s => s.question);
+    const questions = await Question.find({ _id: { $in: questionIds } })
+      .select('title difficulty points category')
+      .lean();
+    const questionMap = {};
+    questions.forEach(q => { questionMap[q._id.toString()] = q; });
+
+    let totalPoints = 0;
+    let earnedPoints = 0;
+    const breakdown = {};
+
+    // Also compute from all assessment questions (not just submitted ones)
+    const allAssessmentQuestions = await Question.find({
+      _id: { $in: assessment.questions || [] },
+    }).select('title difficulty points category').lean();
+
+    allAssessmentQuestions.forEach(q => {
+      totalPoints += q.points || 10;
+    });
+
+    session.submissions.forEach(sub => {
+      const q = questionMap[sub.question.toString()];
+      if (!q) return;
+      const maxPts = q.points || 10;
+      const earned = (sub.score / 100) * maxPts;
+      earnedPoints += earned;
+
+      // Breakdown by category
+      const cat = q.category || q.difficulty || 'General';
+      if (!breakdown[cat]) breakdown[cat] = { earned: 0, total: 0 };
+      breakdown[cat].earned += earned;
+      breakdown[cat].total += maxPts;
+    });
+
+    // Account for unanswered questions in total
+    const overallScore = totalPoints > 0 ? Math.round((earnedPoints / totalPoints) * 100) : 0;
+    const breakdownPercent = {};
+    Object.entries(breakdown).forEach(([cat, vals]) => {
+      breakdownPercent[cat] = vals.total > 0 ? Math.round((vals.earned / vals.total) * 100) : 0;
+    });
+
+    // Build strengths/weaknesses from question results
+    const strengths = [];
+    const weaknesses = [];
+    session.submissions.forEach(sub => {
+      const q = questionMap[sub.question.toString()];
+      if (!q) return;
+      if (sub.score === 100) {
+        strengths.push(`Solved "${q.title}" (${q.difficulty}) — all test cases passed`);
+      } else if (sub.score >= 50) {
+        strengths.push(`Partial solve on "${q.title}" (${sub.passedCount}/${sub.totalCount} test cases)`);
+      } else {
+        weaknesses.push(`Struggled with "${q.title}" (${q.difficulty}) — ${sub.passedCount}/${sub.totalCount} test cases`);
+      }
+    });
+
+    // Mark unanswered questions as weaknesses
+    const submittedQIds = new Set(session.submissions.map(s => s.question.toString()));
+    allAssessmentQuestions.forEach(q => {
+      if (!submittedQIds.has(q._id.toString())) {
+        weaknesses.push(`Did not attempt "${q.title}" (${q.difficulty})`);
+      }
+    });
+
+    // Generate a simple AI summary
+    const aiSummary = `Candidate completed ${session.submissions.length}/${allAssessmentQuestions.length} questions with an overall score of ${overallScore}%. ` +
+      `Time spent: ${Math.round(elapsed / 60)} minutes. ` +
+      (strengths.length > 0 ? `Strengths include: ${strengths.slice(0, 3).join('; ')}. ` : '') +
+      (weaknesses.length > 0 ? `Areas to improve: ${weaknesses.slice(0, 3).join('; ')}.` : '');
+
+    session.status = 'completed';
+    session.completedAt = new Date();
+    session.timeSpentSeconds = Math.round(elapsed);
+    session.score = _clamp(overallScore, 0, 100);
+    session.breakdown = breakdownPercent;
+    session.strengths = strengths.slice(0, 10);
+    session.weaknesses = weaknesses.slice(0, 10);
+    session.aiSummary = aiSummary;
+
+    await session.save();
+
+    // Update invitation
+    await AssessmentInvitation.findByIdAndUpdate(session.invitation, { status: 'completed' });
+
+    logger.info('Coding session completed', {
+      sessionId: session._id,
+      score: overallScore,
+      submitted: session.submissions.length,
+      total: allAssessmentQuestions.length,
+    });
+
+    // Notify employer of completion (non-blocking)
+    notificationService.notifyAssessmentCompleted(session, assessment, req.user).catch((err) =>
+      logger.warn('Failed to send assessment completed notification', { error: err.message })
+    );
+
+    res.json({ session });
+  } catch (error) {
+    logger.error('Error finishing coding session', { error: error.message });
+    res.status(500).json({ message: 'Failed to finish session', error: error.message });
+  }
+};
+
+// ═══════════════════════════════════════════════════════════════
+//  ANTI-CHEAT EVENT RECORDING
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * POST /api/assessments/sessions/:id/anti-cheat — Record an anti-cheat event
+ */
+exports.recordAntiCheatEvent = async (req, res) => {
+  try {
+    const { event, details } = req.body;
+
+    const session = await AssessmentSession.findOne({
+      _id: req.params.id,
+      freelancer: req.user._id,
+      status: 'in_progress',
+    });
+
+    if (!session) {
+      return res.status(404).json({ message: 'Active session not found' });
+    }
+
+    session.antiCheatEvents.push({
+      event,
+      timestamp: new Date(),
+      details: details || '',
+    });
+
+    // Decrement anti-cheat score (starts at 100, loses points per event)
+    const penalties = {
+      tab_switch: 5,
+      window_blur: 3,
+      copy_attempt: 8,
+      paste_attempt: 8,
+      devtools_open: 15,
+      right_click: 2,
+      screen_resize: 1,
+    };
+    const penalty = penalties[event] || 3;
+    session.antiCheatScore = Math.max(0, (session.antiCheatScore || 100) - penalty);
+
+    await session.save();
+
+    res.json({
+      recorded: true,
+      antiCheatScore: session.antiCheatScore,
+      totalEvents: session.antiCheatEvents.length,
+    });
+  } catch (error) {
+    logger.error('Error recording anti-cheat event', { error: error.message });
+    res.status(500).json({ message: 'Failed to record event', error: error.message });
+  }
+};
+
+// ═══════════════════════════════════════════════════════════════
+//  JOIN BY INVITE CODE  (create invitation + start session)
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * POST /api/assessments/join/:inviteCode — Freelancer joins via shareable link.
+ * Creates an invitation if one doesn't exist, then creates/resumes a session.
+ */
+exports.joinByInviteCode = async (req, res) => {
+  try {
+    const assessment = await Assessment.findOne({
+      inviteCode: req.params.inviteCode,
+      isActive: true,
+    });
+
+    if (!assessment) {
+      return res.status(404).json({ message: 'Assessment not found or inactive' });
+    }
+
+    // Check if this freelancer already has an invitation for this assessment
+    let invitation = await AssessmentInvitation.findOne({
+      assessment: assessment._id,
+      $or: [
+        { freelancer: req.user._id },
+        { freelancerEmail: req.user.email },
+      ],
+    });
+
+    if (invitation && invitation.status === 'completed') {
+      return res.status(409).json({ message: 'You have already completed this assessment' });
+    }
+
+    if (invitation && invitation.status === 'declined') {
+      return res.status(409).json({ message: 'You have declined this assessment' });
+    }
+
+    // Create invitation if it doesn't exist
+    if (!invitation) {
+      const inviteToken = crypto.randomBytes(32).toString('hex');
+      invitation = await AssessmentInvitation.create({
+        assessment: assessment._id,
+        employer: assessment.createdBy,
+        freelancer: req.user._id,
+        freelancerEmail: req.user.email,
+        inviteToken,
+        status: 'pending',
+        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+      });
+    }
+
+    // Populate for the response
+    await invitation.populate('assessment', 'title description profession role difficulty questionCount timeLimitMinutes assessmentType allowedLanguages skills');
+    await invitation.populate('employer', 'firstName lastName companyName');
+
+    res.json({
+      invitation,
+      assessment: invitation.assessment,
+    });
+  } catch (error) {
+    logger.error('Error joining by invite code', { error: error.message });
+    res.status(500).json({ message: 'Failed to join assessment', error: error.message });
+  }
+};
+
+// ═══════════════════════════════════════════════════════════════
+//  PUBLIC ASSESSMENT CATALOG
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * GET /api/assessments/public — browse assessments marked as public
+ * No auth required. Supports pagination, search, and filtering.
+ */
+exports.getPublicAssessments = async (req, res) => {
+  try {
+    const {
+      page = 1,
+      limit = 12,
+      search,
+      profession,
+      difficulty,
+      assessmentType,
+      sort = 'recent',
+    } = req.query;
+
+    const query = { isPublic: true, isActive: true };
+
+    if (search) {
+      query.$or = [
+        { title: { $regex: search, $options: 'i' } },
+        { description: { $regex: search, $options: 'i' } },
+        { profession: { $regex: search, $options: 'i' } },
+        { skills: { $elemMatch: { $regex: search, $options: 'i' } } },
+      ];
+    }
+
+    if (profession) query.profession = { $regex: profession, $options: 'i' };
+    if (difficulty) query.difficulty = difficulty;
+    if (assessmentType) query.assessmentType = assessmentType;
+
+    const sortMap = {
+      recent: { createdAt: -1 },
+      popular: { 'stats.totalSessions': -1, createdAt: -1 },
+      title: { title: 1 },
+    };
+    const sortOrder = sortMap[sort] || sortMap.recent;
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const [assessments, total] = await Promise.all([
+      Assessment.find(query)
+        .populate('createdBy', 'firstName lastName companyName profilePicture')
+        .select('title description profession skills difficulty questionCount timeLimitMinutes assessmentType allowedLanguages createdBy createdAt')
+        .sort(sortOrder)
+        .skip(skip)
+        .limit(parseInt(limit))
+        .lean(),
+      Assessment.countDocuments(query),
+    ]);
+
+    // Enrich each with total completions count
+    const assessmentIds = assessments.map(a => a._id);
+    const sessionCounts = await AssessmentSession.aggregate([
+      { $match: { assessment: { $in: assessmentIds }, status: 'completed' } },
+      { $group: { _id: '$assessment', count: { $sum: 1 }, avgScore: { $avg: '$score' } } },
+    ]);
+    const countMap = {};
+    sessionCounts.forEach(sc => {
+      countMap[sc._id.toString()] = { completions: sc.count, avgScore: Math.round(sc.avgScore || 0) };
+    });
+
+    const enriched = assessments.map(a => ({
+      ...a,
+      completions: countMap[a._id.toString()]?.completions || 0,
+      avgScore: countMap[a._id.toString()]?.avgScore || null,
+    }));
+
+    res.json({
+      assessments: enriched,
+      pagination: {
+        total,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        pages: Math.ceil(total / parseInt(limit)),
+      },
+    });
+  } catch (error) {
+    logger.error('Get public assessments error', { error: error.message });
+    res.status(500).json({ message: 'Failed to get public assessments', error: error.message });
+  }
+};

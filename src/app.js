@@ -19,6 +19,8 @@ const assessmentRoutes = require('./routes/assessments');
 const clerkWebhookController = require('./controllers/clerkWebhookController');
 const paymentRoutes = require('./routes/payments');
 const paymentController = require('./controllers/paymentController');
+const codeExecutionRoutes = require('./routes/codeExecution');
+const questionRoutes = require('./routes/questions');
 
 const app = express();
 
@@ -62,6 +64,9 @@ app.use(helmet({
       frameSrc: ["'none'"],
     },
   },
+  // Relax cross-origin policies so the API can serve browsers on different origins
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+  crossOriginOpenerPolicy: false,
   hsts: {
     maxAge: 31536000, // 1 year
     includeSubDomains: true,
@@ -73,7 +78,14 @@ app.use(helmet({
 }));
 
 app.use(cors({
-  origin: config.allowedOrigins,
+  origin: function (origin, callback) {
+    // Allow requests with no Origin header (server-to-server, curl, mobile apps)
+    if (!origin) return callback(null, true);
+    if (config.allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    callback(new Error(`Origin ${origin} not allowed by CORS`));
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Correlation-ID']
@@ -123,6 +135,12 @@ app.use('/api/contracts', contractRoutes);
 
 // Assessments
 app.use('/api/assessments', assessmentRoutes);
+
+// Questions (coding challenges library)
+app.use('/api/questions', questionRoutes);
+
+// Code Execution (Judge0)
+app.use('/api/execute', codeExecutionRoutes);
 
 // Payments
 app.use('/api/payments', paymentRoutes);

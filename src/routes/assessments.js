@@ -61,6 +61,43 @@ router.post(
   assessmentController.createAssessment
 );
 
+// ═══════════════════════════════════════════════════════════════
+//  PUBLIC CATALOG (no auth required – must be before /:id)
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * @swagger
+ * /api/assessments/public:
+ *   get:
+ *     summary: Browse public assessments (no auth required)
+ *     tags: [Assessments]
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, default: 1 }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 12, maximum: 50 }
+ *       - in: query
+ *         name: search
+ *         schema: { type: string }
+ *       - in: query
+ *         name: profession
+ *         schema: { type: string }
+ *       - in: query
+ *         name: difficulty
+ *         schema: { type: string, enum: [beginner, intermediate, advanced] }
+ *       - in: query
+ *         name: assessmentType
+ *         schema: { type: string, enum: [ai_chat, coding] }
+ *       - in: query
+ *         name: sort
+ *         schema: { type: string, enum: [recent, popular, title] }
+ *     responses:
+ *       200: { description: Paginated list of public assessments }
+ */
+router.get('/public', assessmentController.getPublicAssessments);
+
 /**
  * @swagger
  * /api/assessments:
@@ -302,6 +339,59 @@ router.post(
   assessmentController.sendMessage
 );
 
+/**
+ * POST /api/assessments/sessions/:id/finish — Finish a coding session
+ */
+router.post(
+  '/sessions/:id/finish',
+  requireAuth,
+  validate({ params: sessionIdParam }),
+  assessmentController.finishCodingSession
+);
+
+/**
+ * POST /api/assessments/sessions/:id/anti-cheat — Record an anti-cheat event
+ */
+router.post(
+  '/sessions/:id/anti-cheat',
+  requireAuth,
+  validate({ params: sessionIdParam }),
+  assessmentController.recordAntiCheatEvent
+);
+
+/**
+ * POST /api/assessments/join/:inviteCode — Freelancer joins via shareable invite code
+ */
+router.post(
+  '/join/:inviteCode',
+  requireAuth,
+  assessmentController.joinByInviteCode
+);
+
+// ═══════════════════════════════════════════════════════════════
+//  SHAREABLE INVITE CODE (public — no auth)
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * @swagger
+ * /api/assessments/code/{inviteCode}:
+ *   get:
+ *     summary: Get assessment info by shareable invite code (public)
+ *     tags: [Assessments]
+ *     parameters:
+ *       - in: path
+ *         name: inviteCode
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Assessment public info }
+ *       404: { description: Not found }
+ */
+router.get(
+  '/code/:inviteCode',
+  assessmentController.getAssessmentByInviteCode
+);
+
 // ═══════════════════════════════════════════════════════════════
 //  ASSESSMENT TEMPLATES — param routes (after /invitations & /sessions)
 // ═══════════════════════════════════════════════════════════════
@@ -392,6 +482,53 @@ router.delete(
   requireRole('BusinessOwner'),
   validate({ params: assessmentIdParam }),
   assessmentController.deleteAssessment
+);
+
+// ═══════════════════════════════════════════════════════════════
+//  QUESTION MANAGEMENT (for coding assessments)
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * POST /api/assessments/:id/questions — add questions to assessment
+ */
+router.post(
+  '/:id/questions',
+  requireAuth,
+  requireRole('BusinessOwner'),
+  validate({ params: assessmentIdParam }),
+  assessmentController.addQuestions
+);
+
+/**
+ * DELETE /api/assessments/:id/questions/:questionId — remove a question
+ */
+router.delete(
+  '/:id/questions/:questionId',
+  requireAuth,
+  requireRole('BusinessOwner'),
+  assessmentController.removeQuestion
+);
+
+/**
+ * PUT /api/assessments/:id/questions/reorder — reorder questions
+ */
+router.put(
+  '/:id/questions/reorder',
+  requireAuth,
+  requireRole('BusinessOwner'),
+  validate({ params: assessmentIdParam }),
+  assessmentController.reorderQuestions
+);
+
+/**
+ * POST /api/assessments/:id/regenerate-code — regenerate invite code
+ */
+router.post(
+  '/:id/regenerate-code',
+  requireAuth,
+  requireRole('BusinessOwner'),
+  validate({ params: assessmentIdParam }),
+  assessmentController.regenerateInviteCode
 );
 
 module.exports = router;

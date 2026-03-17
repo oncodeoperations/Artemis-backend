@@ -1,0 +1,123 @@
+# ============================================
+# Judge0 CE — Self-Hosted Code Execution Engine
+# Used by Artemis for running candidate code in assessments.
+#
+# Quick Start:
+#   docker-compose -f docker-compose.judge0.yml up -d
+#
+# Health Check:
+#   curl http://localhost:2358/about
+#
+# Docs: https://github.com/judge0/judge0
+# ============================================
+
+version: "3.8"
+
+x-logging: &default-logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  judge0-server:
+    image: judge0/judge0:1.13.1
+    container_name: judge0-server
+    ports:
+      - "2358:2358"
+    privileged: true
+    <<: *default-logging
+    restart: unless-stopped
+    environment:
+      - REDIS_URL=redis://judge0-redis:6379
+      - POSTGRES_HOST=judge0-db
+      - POSTGRES_DB=judge0
+      - POSTGRES_USER=judge0
+      - POSTGRES_PASSWORD=judge0password
+      # Workers — how many concurrent code executions
+      - RAILS_MAX_THREADS=4
+      - RAILS_ENV=production
+      # Execution limits (safety)
+      - CPU_TIME_LIMIT=5
+      - CPU_EXTRA_TIME=1
+      - WALL_TIME_LIMIT=15
+      - MEMORY_LIMIT=256000
+      - STACK_LIMIT=64000
+      - MAX_PROCESSES_AND_OR_THREADS=60
+      - ENABLE_WAIT_RESULT=true
+      - ENABLE_BATCHED_SUBMISSIONS=true
+      # Disable auth for local dev (enable in production)
+      - AUTHN_HEADER=
+      - AUTHN_TOKEN=
+      - AUTHZ_HEADER=
+      - AUTHZ_TOKEN=
+    depends_on:
+      judge0-db:
+        condition: service_healthy
+      judge0-redis:
+        condition: service_healthy
+
+  judge0-workers:
+    image: judge0/judge0:1.13.1
+    container_name: judge0-workers
+    command: ["./scripts/workers"]
+    privileged: true
+    <<: *default-logging
+    restart: unless-stopped
+    environment:
+      - REDIS_URL=redis://judge0-redis:6379
+      - POSTGRES_HOST=judge0-db
+      - POSTGRES_DB=judge0
+      - POSTGRES_USER=judge0
+      - POSTGRES_PASSWORD=judge0password
+      - RAILS_MAX_THREADS=4
+      - RAILS_ENV=production
+      - CPU_TIME_LIMIT=5
+      - CPU_EXTRA_TIME=1
+      - WALL_TIME_LIMIT=15
+      - MEMORY_LIMIT=256000
+      - STACK_LIMIT=64000
+      - MAX_PROCESSES_AND_OR_THREADS=60
+      - ENABLE_WAIT_RESULT=true
+      - ENABLE_BATCHED_SUBMISSIONS=true
+    depends_on:
+      judge0-db:
+        condition: service_healthy
+      judge0-redis:
+        condition: service_healthy
+
+  judge0-db:
+    image: postgres:16-alpine
+    container_name: judge0-db
+    <<: *default-logging
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=judge0
+      - POSTGRES_USER=judge0
+      - POSTGRES_PASSWORD=judge0password
+    volumes:
+      - judge0-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U judge0"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  judge0-redis:
+    image: redis:7-alpine
+    container_name: judge0-redis
+    <<: *default-logging
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - judge0-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  judge0-postgres-data:
+  judge0-redis-data:

@@ -404,11 +404,10 @@ const browseTalent = async (req, res) => {
   try {
     const { profession, skills, search, minScore, sort = 'score', page = 1, limit = 20 } = req.query;
 
-    // Base filter: active freelancers who have completed onboarding (have a profession)
+    // Base filter: active freelancers (no longer require profession to be set)
     const filter = {
       isActive: true,
       role: 'Freelancer',
-      profession: { $exists: true, $ne: '' },
     };
 
     if (profession) {
@@ -709,6 +708,78 @@ const getMyProfile = async (req, res) => {
   }
 };
 
+/**
+ * Get the authenticated freelancer's full profile + assessment history
+ * (mirrors getTalentProfile but for the logged-in user)
+ * GET /api/users/me/full-profile
+ */
+const getMyFullProfile = async (req, res) => {
+  try {
+    const userId = req.auth.mongoUser._id;
+
+    const user = await User.findById(userId)
+      .select('firstName lastName email profilePicture profession professionalRole skills bio country githubUsername createdAt')
+      .lean();
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Get completed assessment sessions with full details
+    const sessions = await AssessmentSession.find({
+      freelancer: userId,
+      status: 'completed',
+    })
+      .populate('assessment', 'title profession difficulty questionCount timeLimitMinutes assessmentType allowedLanguages skills createdBy')
+      .populate({
+        path: 'assessment',
+        populate: { path: 'createdBy', select: 'firstName lastName companyName' },
+      })
+      .select('assessment score breakdown strengths weaknesses timeSpentSeconds completedAt status')
+      .sort({ completedAt: -1 })
+      .lean();
+
+    // Get in-progress sessions as well
+    const activeSessions = await AssessmentSession.find({
+      freelancer: userId,
+      status: { $in: ['in_progress', 'started'] },
+    })
+      .populate('assessment', 'title profession difficulty questionCount timeLimitMinutes assessmentType')
+      .select('assessment startedAt status')
+      .sort({ startedAt: -1 })
+      .lean();
+
+    const completedScores = sessions.filter(s => s.score != null).map(s => s.score);
+    const bestScore = completedScores.length > 0 ? Math.max(...completedScores) : null;
+    const avgScore = completedScores.length > 0 ? Math.round(completedScores.reduce((a, b) => a + b, 0) / completedScores.length) : null;
+
+    // Compute badges
+    const badges = [];
+    if (completedScores.length >= 1) badges.push({ key: 'first_assessment', label: 'First Assessment', icon: 'award' });
+    if (completedScores.length >= 5) badges.push({ key: 'five_assessments', label: 'Assessment Pro', icon: 'trophy' });
+    if (completedScores.length >= 10) badges.push({ key: 'ten_assessments', label: 'Assessment Master', icon: 'star' });
+    if (bestScore >= 90) badges.push({ key: 'top_scorer', label: 'Top Scorer', icon: 'zap' });
+    if (bestScore >= 95) badges.push({ key: 'elite', label: 'Elite', icon: 'crown' });
+    const perfectCount = completedScores.filter(s => s === 100).length;
+    if (perfectCount >= 1) badges.push({ key: 'perfect', label: 'Perfect Score', icon: 'target' });
+
+    res.json({
+      profile: {
+        ...user,
+        bestScore,
+        avgScore,
+        assessmentCount: sessions.length,
+        badges,
+      },
+      assessments: sessions,
+      activeSessions,
+    });
+  } catch (error) {
+    logger.error('Get my full profile error', { error: error.message });
+    res.status(500).json({ error: 'Failed to get full profile', message: error.message });
+  }
+};
+
 module.exports = {
   getAllUsers,
   getUserById,
@@ -721,4 +792,5 @@ module.exports = {
   getTalentProfile,
   getDashboardStats,
   getMyProfile,
+  getMyFullProfile,
 };

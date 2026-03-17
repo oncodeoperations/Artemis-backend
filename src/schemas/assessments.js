@@ -14,8 +14,12 @@ const createAssessmentBody = z.object({
     .optional()
     .default([]),
   difficulty: z.enum(['beginner', 'intermediate', 'advanced']).default('intermediate'),
-  questionCount: z.number().int().min(3).max(20).default(10),
-  timeLimitMinutes: z.number().int().min(5).max(120).default(30),
+  questionCount: z.number().int().min(1).max(50).default(10),
+  timeLimitMinutes: z.number().int().min(5).max(180).default(30),
+  assessmentType: z.enum(['coding', 'ai_chat']).optional().default('ai_chat'),
+  questions: z.array(z.string()).optional().default([]),
+  allowedLanguages: z.array(z.string()).optional(),
+  isPublic: z.boolean().optional().default(false),
 });
 
 const updateAssessmentBody = z
@@ -26,9 +30,13 @@ const updateAssessmentBody = z
     role: z.string().max(100).optional(),
     skills: z.array(z.string().max(50)).max(30).optional(),
     difficulty: z.enum(['beginner', 'intermediate', 'advanced']).optional(),
-    questionCount: z.number().int().min(3).max(20).optional(),
-    timeLimitMinutes: z.number().int().min(5).max(120).optional(),
+    questionCount: z.number().int().min(1).max(50).optional(),
+    timeLimitMinutes: z.number().int().min(5).max(180).optional(),
     isActive: z.boolean().optional(),
+    assessmentType: z.enum(['coding', 'ai_chat']).optional(),
+    questions: z.array(z.string()).optional(),
+    allowedLanguages: z.array(z.string()).optional(),
+    isPublic: z.boolean().optional(),
   })
   .refine((d) => Object.keys(d).length > 0, {
     message: 'At least one field must be provided for update',

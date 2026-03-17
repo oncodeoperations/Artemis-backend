@@ -70,6 +70,18 @@ router.get('/me/profile', requireAuth, userController.getMyProfile);
 
 /**
  * @swagger
+ * /api/users/me/full-profile:
+ *   get:
+ *     summary: Get freelancer's own full profile with assessment history and badges
+ *     tags: [Users]
+ *     responses:
+ *       200:
+ *         description: Full profile with completed/active assessments and badges
+ */
+router.get('/me/full-profile', requireAuth, userController.getMyFullProfile);
+
+/**
+ * @swagger
  * /api/users/talent:
  *   get:
  *     summary: Browse freelancer talent by profession, skills, and assessment scores

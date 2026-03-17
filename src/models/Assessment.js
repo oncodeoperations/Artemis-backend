@@ -3,7 +3,9 @@ const mongoose = require('mongoose');
 /**
  * Assessment Model
  * A reusable assessment template created by an employer.
- * Defines what profession / skills to test, difficulty, and time limits.
+ * Supports two modes:
+ *   - 'ai_chat'  → adaptive AI-generated Q&A (legacy)
+ *   - 'coding'   → HackerRank-style coding challenges with test cases (new)
  */
 const AssessmentSchema = new mongoose.Schema(
   {
@@ -18,6 +20,17 @@ const AssessmentSchema = new mongoose.Schema(
       maxlength: [2000, 'Description cannot exceed 2000 characters'],
       trim: true,
       default: '',
+    },
+
+    // ─── Assessment Type ───────────────────────────────────────
+    assessmentType: {
+      type: String,
+      enum: {
+        values: ['coding', 'ai_chat'],
+        message: 'Assessment type must be coding or ai_chat',
+      },
+      default: 'coding',
+      index: true,
     },
 
     // ─── Targeting ─────────────────────────────────────────────
@@ -52,15 +65,39 @@ const AssessmentSchema = new mongoose.Schema(
     },
     questionCount: {
       type: Number,
-      min: [3, 'Minimum 3 questions'],
+      min: [1, 'Minimum 1 question'],
       max: [20, 'Maximum 20 questions'],
-      default: 10,
+      default: 5,
     },
     timeLimitMinutes: {
       type: Number,
       min: [5, 'Minimum 5 minutes'],
-      max: [120, 'Maximum 120 minutes'],
-      default: 30,
+      max: [180, 'Maximum 180 minutes'],
+      default: 60,
+    },
+
+    // ─── Questions (for coding assessments) ────────────────────
+    questions: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Question',
+    }],
+
+    // ─── Allowed Languages (for coding assessments) ────────────
+    allowedLanguages: {
+      type: [String],
+      default: ['javascript', 'python', 'java', 'cpp'],
+    },
+
+    // ─── Sharing ───────────────────────────────────────────────
+    inviteCode: {
+      type: String,
+      unique: true,
+      sparse: true,
+      index: true,
+    },
+    isPublic: {
+      type: Boolean,
+      default: false,
     },
 
     // ─── Ownership ─────────────────────────────────────────────
@@ -80,7 +117,9 @@ const AssessmentSchema = new mongoose.Schema(
   }
 );
 
-// Compound index for fast employer lookups
+// Compound indexes
 AssessmentSchema.index({ createdBy: 1, isActive: 1 });
+AssessmentSchema.index({ assessmentType: 1, isActive: 1 });
+AssessmentSchema.index({ inviteCode: 1 });
 
 module.exports = mongoose.model('Assessment', AssessmentSchema);
